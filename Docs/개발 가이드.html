@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 안면인식 출퇴근 시스템 — 개발 가이드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+/* ─── Reset & Base ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:        #f5f6f8;
+  --bg2:       #ffffff;
+  --bg3:       #f0f1f4;
+  --bg4:       #e4e6ec;
+  --line:      rgba(0,0,0,0.07);
+  --line2:     rgba(0,0,0,0.12);
+  --text:      #1a1d2e;
+  --muted:     #6b7280;
+  --accent:    #2563eb;
+  --accent2:   #0d9488;
+  --accent3:   #d97706;
+  --danger:    #dc2626;
+  --mono:      'IBM Plex Mono', monospace;
+  --sans:      'Noto Sans KR', sans-serif;
+  --display:   'Syne', sans-serif;
+  --radius:    8px;
+  --radius-lg: 14px;
+}
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.7;
+  min-height: 100vh;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg3); }
+::-webkit-scrollbar-thumb { background: #c4c9d8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3b4; }
+
+/* ─── Layout ─── */
+.layout { display: flex; min-height: 100vh; }
+
+/* ─── Sidebar ─── */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--line);
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  transition: transform 0.3s;
+}
+.sidebar-logo {
+  padding: 28px 20px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.sidebar-logo .logo-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.sidebar-logo h1 {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.3;
+}
+.nav { padding: 16px 0; flex: 1; }
+.nav-section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 14px 20px 6px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  transition: all 0.15s;
+  border-left: 2px solid transparent;
+  text-decoration: none;
+}
+.nav-item:hover { color: var(--text); background: var(--bg3); }
+.nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(37,99,235,0.06); }
+.nav-item .nav-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.sidebar-footer span { color: var(--accent2); }
+
+/* ─── Main Content ─── */
+.main {
+  margin-left: 240px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─── Hero ─── */
+.hero {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  padding: 56px 56px 48px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -80px; right: -80px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(37,99,235,0.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: -40px; left: 30%;
+  width: 300px; height: 200px;
+  background: radial-gradient(circle, rgba(13,148,136,0.04) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-eyebrow::before {
+  content: '';
+  width: 24px; height: 1px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+.hero h2 {
+  font-family: var(--display);
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.15;
+  margin-bottom: 14px;
+  letter-spacing: -0.02em;
+}
+.hero h2 em {
+  font-style: normal;
+  color: var(--accent);
+}
+.hero-sub {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 560px;
+  margin-bottom: 28px;
+  line-height: 1.7;
+}
+.hero-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.htag {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line2);
+  color: var(--muted);
+  background: var(--bg2);
+}
+.htag.hl { border-color: rgba(37,99,235,0.35); color: var(--accent); background: rgba(37,99,235,0.05); }
+.htag.hl2 { border-color: rgba(13,148,136,0.35); color: var(--accent2); background: rgba(13,148,136,0.05); }
+.htag.hl3 { border-color: rgba(217,119,6,0.35); color: var(--accent3); background: rgba(217,119,6,0.05); }
+
+/* ─── Sections ─── */
+.content { padding: 0 56px 80px; }
+.section {
+  padding-top: 56px;
+  opacity: 0;
+  transform: translateY(16px);
+  animation: fadeUp 0.5s ease forwards;
+}
+@keyframes fadeUp {
+  to { opacity: 1; transform: none; }
+}
+.section:nth-child(1) { animation-delay: 0.05s; }
+.section:nth-child(2) { animation-delay: 0.10s; }
+.section:nth-child(3) { animation-delay: 0.15s; }
+.section:nth-child(4) { animation-delay: 0.20s; }
+.section:nth-child(5) { animation-delay: 0.25s; }
+.section:nth-child(6) { animation-delay: 0.30s; }
+.section:nth-child(7) { animation-delay: 0.35s; }
+.section:nth-child(8) { animation-delay: 0.40s; }
+
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.section-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(37,99,235,0.08);
+  border: 1px solid rgba(37,99,235,0.2);
+  border-radius: 6px;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.section-title {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.section-desc {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ─── Cards ─── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  margin-bottom: 14px;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-title .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.card-title .dot.g { background: var(--accent2); }
+.card-title .dot.y { background: var(--accent3); }
+.card-title .dot.r { background: var(--danger); }
+
+/* ─── Grid ─── */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+
+/* ─── Stat Cards ─── */
+.stat {
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.stat-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-family: var(--mono); letter-spacing: 0.05em; text-transform: uppercase; }
+.stat-val { font-family: var(--display); font-size: 26px; font-weight: 700; color: var(--text); }
+.stat-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* ─── Code Blocks ─── */
+.code-wrap {
+  background: #f8f9fb;
+  border: 1px solid #d0d5e0;
+  border-radius: var(--radius-lg);
+  margin: 12px 0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 16px;
+  border-bottom: 1px solid #e2e6ef;
+  background: #eef0f6;
+}
+.code-filename {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #5a6277;
+}
+.code-filename span { color: #0d6e64; font-weight: 500; }
+.code-copy {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #6b7280;
+  background: #fff;
+  border: 1px solid #d0d5e0;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.code-copy:hover { color: var(--accent); border-color: var(--accent); background: rgba(37,99,235,0.04); }
+.code-body {
+  padding: 18px 20px;
+  overflow-x: auto;
+  background: #f8f9fb;
+}
+.code-body pre {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.8;
+  color: #2d3748;
+  white-space: pre;
+}
+/* Syntax Colors — light theme, high contrast */
+.kw  { color: #7c3aed; font-weight: 500; }   /* keyword: purple */
+.fn  { color: #1d4ed8; }                      /* function: blue */
+.str { color: #15803d; }                      /* string: green */
+.cm  { color: #9ca3af; font-style: italic; }  /* comment: gray */
+.nm  { color: #b45309; }                      /* number/name: amber */
+.cls { color: #be185d; font-weight: 500; }    /* class: pink */
+.op  { color: #0f766e; }                      /* operator: teal */
+
+/* ─── Callouts ─── */
+.callout {
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin: 12px 0;
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.callout-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.callout.info  { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.callout.warn  { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+.callout.ok    { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+.callout.err   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+.callout strong { font-weight: 600; }
+
+/* ─── Pipeline ─── */
+.pipeline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0;
+}
+.pipe-step {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.pipe-step.hi { border-color: rgba(37,99,235,0.4); color: var(--accent); background: rgba(37,99,235,0.05); }
+.pipe-arrow { color: var(--muted); font-size: 14px; }
+
+/* ─── Tabs ─── */
+.tab-bar { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 0; }
+.tab {
+  padding: 7px 14px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  font-size: 12px;
+  font-family: var(--mono);
+  cursor: pointer;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: var(--bg3);
+  transition: all 0.15s;
+}
+.tab:hover { color: var(--text); background: var(--bg4); }
+.tab.active {
+  background: #f8f9fb;
+  color: var(--accent);
+  border-color: #d0d5e0;
+  border-bottom-color: #f8f9fb;
+  position: relative; z-index: 1;
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ─── Table ─── */
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table.exp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+table.exp-table th {
+  background: #f0f2f8;
+  padding: 10px 14px;
+  text-align: left;
+  color: #4a5568;
+  font-weight: 500;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #d0d5e0;
+  white-space: nowrap;
+}
+table.exp-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: top;
+}
+table.exp-table tr:last-child td { border-bottom: none; }
+table.exp-table tr:hover td { background: #f5f7ff; }
+table.exp-table { background: var(--bg2); border: 1px solid #d0d5e0; border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+
+/* ─── Badges ─── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.badge-b { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.badge-g { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.badge-y { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.badge-r { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+/* ─── State Machine ─── */
+.state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.state-card {
+  background: var(--bg2);
+  border: 1px solid #d0d5e0;
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.state-card .state-from { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.1em; }
+.state-card .state-name { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
+.state-card .state-to { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ─── Checklist ─── */
+.checklist { list-style: none; }
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.checklist li:last-child { border-bottom: none; }
+.checklist li .ck {
+  width: 18px; height: 18px;
+  border: 1.5px solid #d0d5e0;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  color: var(--accent2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.checklist li .ck:hover { border-color: var(--accent2); background: rgba(13,148,136,0.08); }
+.checklist li.done { color: var(--text); }
+.checklist li.done .ck { background: rgba(13,148,136,0.1); border-color: var(--accent2); }
+.checklist li .ck-text { flex: 1; }
+.checklist li .phase-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ─── Dir Tree ─── */
+.dir-tree {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.9;
+  color: #2d3748;
+  background: #f8f9fb;
+  border: 1px solid #d0d5e0;
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  white-space: pre;
+  overflow-x: auto;
+}
+.dir-tree .d  { color: #1d4ed8; font-weight: 500; }
+.dir-tree .f  { color: #374151; }
+.dir-tree .cm { color: #9ca3af; font-style: italic; }
+.dir-tree .hi { color: #15803d; font-weight: 500; }
+
+/* ─── Inline code ─── */
+code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: #eef0f6;
+  border: 1px solid #d0d5e0;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: #0f766e;
+}
+
+/* ─── Divider ─── */
+.divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+/* ─── Mobile ─── */
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: none; }
+  .main { margin-left: 0; }
+  .hero { padding: 32px 20px 28px; }
+  .hero h2 { font-size: 24px; }
+  .content { padding: 0 20px 60px; }
+  .menu-btn { display: flex; }
+}
+
+.menu-btn {
+  display: none;
+  position: fixed;
+  top: 16px; left: 16px;
+  z-index: 200;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  width: 38px; height: 38px;
+  align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 18px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+</style>
+</head>
+<body>
+
+<button class="menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-tag">Dev Guide v1.0</div>
+      <h1>AI 안면인식<br>출퇴근 시스템</h1>
+    </div>
+    <nav class="nav">
+      <div class="nav-section-label">Setup</div>
+      <a class="nav-item active" href="#s1"><span class="nav-num">01</span> 환경 설정</a>
+
+      <div class="nav-section-label">Data</div>
+      <a class="nav-item" href="#s2"><span class="nav-num">02</span> 데이터 수집 파이프라인</a>
+      <a class="nav-item" href="#s3"><span class="nav-num">03</span> 직원 등록 & 임베딩 DB</a>
+
+      <div class="nav-section-label">Model</div>
+      <a class="nav-item" href="#s4"><span class="nav-num">04</span> 모델 정의 & 학습</a>
+      <a class="nav-item" href="#s5"><span class="nav-num">05</span> 실험 설계 & 평가</a>
+
+      <div class="nav-section-label">System</div>
+      <a class="nav-item" href="#s6"><span class="nav-num">06</span> 상태 머신 & DB</a>
+      <a class="nav-item" href="#s7"><span class="nav-num">07</span> 실시간 추론 메인 루프</a>
+      <a class="nav-item" href="#s8"><span class="nav-num">08</span> 프로젝트 구조 & 체크리스트</a>
+    </nav>
+    <div class="sidebar-footer">
+      목표 정확도 <span>≥ 95%</span> · FPS <span>≥ 15</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-eyebrow">PyTorch Transfer Learning · State Machine · SQLite NAS</div>
+      <h2>AI 기반 실시간<br><em>안면인식 출퇴근</em> 시스템<br>개발 가이드</h2>
+      <p class="hero-sub">직원 30명 규모 사업장을 위한 실시간 안면인식 근태 관리 솔루션. QR 태그 방식 대체 및 대리 출결 방지. InceptionResnetV1 + 상태 머신 기반 구현 레퍼런스.</p>
+      <div class="hero-tags">
+        <span class="htag hl">PyTorch 2.x</span>
+        <span class="htag hl">facenet-pytorch</span>
+        <span class="htag hl2">OpenCV</span>
+        <span class="htag hl2">SQLite NAS</span>
+        <span class="htag hl3">Transfer Learning</span>
+        <span class="htag hl3">TensorBoard</span>
+        <span class="htag">Python 3.9+</span>
+        <span class="htag">CUDA 11.8</span>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- ─── Section 1 ─── -->
+      <section class="section" id="s1">
+        <div class="section-header">
+          <div class="section-num">01</div>
+          <div class="section-info">
+            <div class="section-title">환경 설정 및 의존성</div>
+            <div class="section-desc">가상환경 생성 → PyTorch CUDA 설치 → 패키지 설치 순서로 진행</div>
+          </div>
+        </div>
+
+        <div class="grid3">
+          <div class="stat"><div class="stat-label">Python</div><div class="stat-val">3.9+</div><div class="stat-sub">3.11 권장</div></div>
+          <div class="stat"><div class="stat-label">PyTorch</div><div class="stat-val">2.2</div><div class="stat-sub">CUDA 11.8 기준</div></div>
+          <div class="stat"><div class="stat-label">직원 수</div><div class="stat-val">30명</div><div class="stat-sub">num_classes=30</div></div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>requirements.txt</span></div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre>--extra-index-url https://download.pytorch.org/whl/cu118
+
+# ── 핵심 딥러닝 ──────────────────────────────────────
+torch==2.2.0
+torchvision==0.17.0
+facenet-pytorch==2.5.3   # MTCNN + InceptionResnetV1 포함
+
+# ── 컴퓨터 비전 ──────────────────────────────────────
+opencv-python==4.9.0.80
+Pillow==10.2.0
+
+# ── 데이터 &amp; 유틸 ────────────────────────────────────
+numpy==1.26.4
+scikit-learn==1.4.0      # train_test_split, classification_report
+tqdm==4.66.2
+python-dotenv==1.0.1     # .env 로 NAS_DB_PATH 주입
+
+# ── 학습 모니터링 ─────────────────────────────────────
+tensorboard==2.16.2</pre></div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>shell</span> · 설치 명령어</div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="cm"># 1. 가상환경 생성 및 활성화</span>
+python -m venv .venv
+source .venv/bin/activate         <span class="cm"># Windows: .venv\Scripts\activate</span>
+
+<span class="cm"># 2. 전체 패키지 한 번에 설치</span>
+<span class="cm">#    (requirements.txt 첫 줄의 --extra-index-url이 PyTorch CUDA 인덱스를 자동 적용)</span>
+pip install -r requirements.txt
+
+<span class="cm"># 3. CUDA 설치 확인</span>
+python -c <span class="str">"import torch; print(torch.cuda.is_available(), torch.__version__)"</span>  <span class="cm"># True 확인</span>
+
+<span class="cm"># 4. NAS 마운트 확인 (Linux)</span>
+ls /mnt/nas/                       <span class="cm"># attendance.db 존재 확인</span></pre></div>
+        </div>
+
+        <div class="callout warn">
+          <div class="callout-icon">⚠</div>
+          <div><strong>NAS 경로 관리:</strong> SQLite 파일 경로를 코드에 하드코딩하지 마세요. <code>.env</code> 파일에 <code>NAS_DB_PATH=/mnt/nas/attendance.db</code>를 정의하고 <code>python-dotenv</code>로 로드하거나 OS 환경변수로 주입하세요. NAS가 언마운트되면 DB 연결이 끊기므로 <code>main.py</code> 시작 시 마운트 상태를 먼저 검증하세요.</div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 2 ─── -->
+      <section class="section" id="s2">
+        <div class="section-header">
+          <div class="section-num">02</div>
+          <div class="section-info">
+            <div class="section-title">데이터 수집 파이프라인</div>
+            <div class="section-desc">직원 1인당 5~10초 동영상 → MTCNN 필터링 → 70/15/15 분할</div>
+          </div>
+        </div>
+
+        <div class="pipeline">
+          <div class="pipe-step hi">웹캠 동영상 촬영</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step">Frame Skipping</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step">MTCNN 검출</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step">Confidence ≥ 0.95 필터</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step">160×160 crop</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step hi">70 / 15 / 15 분할 저장</div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>utils/data_collector.py</span></div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>동영상/웹캠 → MTCNN 필터링 → raw float 텐서(.pt) 저장.
+
+저장 규칙:
+  - post_process=<span class="kw">False</span> 로 raw float(<span class="nm">0</span>~<span class="nm">255</span> 범위) 텐서를 저장한다.
+  - 정규화 (x-<span class="nm">127.5</span>)/<span class="nm">128.0</span> 은 Dataset / registry 에서 <span class="str">&#x27;한 번만&#x27;</span> 수행한다.
+    (수집 단계와 학습 단계에서 중복 정규화하면 범위가 틀어진다.)
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> os
+
+<span class="kw">import</span> cv2
+<span class="kw">import</span> torch
+<span class="kw">from</span> facenet_pytorch <span class="kw">import</span> MTCNN
+<span class="kw">from</span> PIL <span class="kw">import</span> Image
+
+
+<span class="kw">class</span> <span class="cls">FaceDataCollector</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, emp_id: str, save_dir: str, conf_thr: float = <span class="nm">0.95</span>):
+        self.emp_id = emp_id
+        self.save_dir = save_dir
+        self.conf_thr = conf_thr
+        device = <span class="str">&quot;cuda&quot;</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="str">&quot;cpu&quot;</span>
+        <span class="cm"># image_size=160: InceptionResnetV1 입력 크기 고정</span>
+        <span class="cm"># margin=20: 얼굴 경계에 여백 추가 → 정합성 향상</span>
+        <span class="cm"># post_process=False: [-1,1] 정규화는 나중에 직접 수행(중복 방지)</span>
+        self.mtcnn = MTCNN(
+            image_size=<span class="nm">160</span>,
+            margin=<span class="nm">20</span>,
+            keep_all=<span class="kw">False</span>,
+            post_process=<span class="kw">False</span>,
+            device=device,
+        )
+
+    <span class="kw">def</span> <span class="fn">_save_face</span>(self, img_pil: Image.Image, out_dir: str, saved: int) -&gt; bool:
+        <span class="str">&quot;&quot;&quot;검출/필터/저장 공통 로직. 저장 성공 시 True.&quot;&quot;&quot;</span>
+        boxes, probs = self.mtcnn.detect(img_pil)
+        <span class="kw">if</span> probs <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> probs[<span class="nm">0</span>] <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> probs[<span class="nm">0</span>] &gt;= self.conf_thr:
+            face_tensor = self.mtcnn(img_pil)  <span class="cm"># (3, 160, 160) raw float</span>
+            <span class="kw">if</span> face_tensor <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+                path = os.path.join(out_dir, <span class="str">f&quot;{saved:04d}.pt&quot;</span>)
+                torch.save(face_tensor, path)
+                <span class="kw">return</span> <span class="kw">True</span>
+        <span class="kw">return</span> <span class="kw">False</span>
+
+    <span class="kw">def</span> <span class="fn">collect_from_video</span>(self, video_path: str, frame_skip: int = <span class="nm">5</span>) -&gt; int:
+        <span class="str">&quot;&quot;&quot;동영상 → MTCNN 필터링 → .pt 텐서 저장. 저장 프레임 수 반환.&quot;&quot;&quot;</span>
+        cap = cv2.VideoCapture(video_path)
+        out_dir = os.path.join(self.save_dir, self.emp_id)
+        os.makedirs(out_dir, exist_ok=<span class="kw">True</span>)
+        saved, frame_idx = <span class="nm">0</span>, <span class="nm">0</span>
+        <span class="kw">while</span> cap.isOpened():
+            ret, frame = cap.read()
+            <span class="kw">if</span> <span class="kw">not</span> ret:
+                <span class="kw">break</span>
+            <span class="kw">if</span> frame_idx % frame_skip != <span class="nm">0</span>:  <span class="cm"># Frame Skipping</span>
+                frame_idx += <span class="nm">1</span>
+                <span class="kw">continue</span>
+            img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            <span class="kw">if</span> self._save_face(img_pil, out_dir, saved):
+                saved += <span class="nm">1</span>
+            frame_idx += <span class="nm">1</span>
+        cap.release()
+        <span class="kw">return</span> saved  <span class="cm"># 권장: 직원 1인 ≥ 50프레임</span>
+
+    <span class="kw">def</span> <span class="fn">collect_live</span>(self, duration_sec: int = <span class="nm">8</span>) -&gt; int:
+        <span class="str">&quot;&quot;&quot;웹캠 라이브 캡처 버전 — 동영상 파일 없이 직접 수집.&quot;&quot;&quot;</span>
+        cap = cv2.VideoCapture(<span class="nm">0</span>)
+        out_dir = os.path.join(self.save_dir, self.emp_id)
+        os.makedirs(out_dir, exist_ok=<span class="kw">True</span>)
+        saved, frame_idx = <span class="nm">0</span>, <span class="nm">0</span>
+        start = cv2.getTickCount()
+        <span class="kw">while</span> cap.isOpened():
+            elapsed = (cv2.getTickCount() - start) / cv2.getTickFrequency()
+            <span class="kw">if</span> elapsed &gt; duration_sec:
+                <span class="kw">break</span>
+            ret, frame = cap.read()
+            <span class="kw">if</span> <span class="kw">not</span> ret:
+                <span class="kw">break</span>
+            <span class="kw">if</span> frame_idx % <span class="nm">5</span> == <span class="nm">0</span>:
+                img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                <span class="kw">if</span> self._save_face(img_pil, out_dir, saved):
+                    saved += <span class="nm">1</span>
+            frame_idx += <span class="nm">1</span>
+        cap.release()
+        <span class="kw">return</span> saved
+
+
+<span class="kw">if</span> __name__ == <span class="str">&quot;__main__&quot;</span>:
+    <span class="cm"># 사용 예시: 동영상에서 수집</span>
+    <span class="cm">#   python -m utils.data_collector</span>
+    collector = FaceDataCollector(emp_id=<span class="str">&quot;E001&quot;</span>, save_dir=<span class="str">&quot;data/raw&quot;</span>)
+    n = collector.collect_from_video(<span class="str">&quot;data/videos/E001.mp4&quot;</span>, frame_skip=<span class="nm">5</span>)
+    print(<span class="str">f&quot;E001: {n} 프레임 저장&quot;</span>)</pre></div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>utils/split_dataset.py</span> · 70/15/15 분할</div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>raw_dir/{emp_id}/*.pt → out_dir/{train|val|test}/{emp_id}/*.pt  (<span class="nm">70</span>/<span class="nm">15</span>/<span class="nm">15</span> 분할).
+
+[FIX <span class="cm">#1] 원본의 `if len(frames) 10:` 구문 오류(연산자 누락)를 수정.</span>
+         프레임이 최소 개수 미만이면 경고 후 skip 한다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> glob
+<span class="kw">import</span> os
+<span class="kw">import</span> shutil
+
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+
+MIN_FRAMES = <span class="nm">10</span>  <span class="cm"># 이 미만이면 분할 의미가 없으므로 skip</span>
+
+
+<span class="kw">def</span> <span class="fn">split_dataset</span>(
+    raw_dir: str,
+    out_dir: str,
+    train_ratio: float = <span class="nm">0.70</span>,
+    val_ratio: float = <span class="nm">0.15</span>,
+    min_frames: int = MIN_FRAMES,
+):
+    <span class="kw">for</span> emp_id <span class="kw">in</span> sorted(os.listdir(raw_dir)):
+        emp_path = os.path.join(raw_dir, emp_id)
+        <span class="kw">if</span> <span class="kw">not</span> os.path.isdir(emp_path):
+            <span class="kw">continue</span>
+        frames = glob.glob(os.path.join(emp_path, <span class="str">&quot;*.pt&quot;</span>))
+
+        <span class="cm"># [FIX #1] 연산자 누락 수정: 프레임 부족 시 경고 후 skip</span>
+        <span class="kw">if</span> len(frames) &lt; min_frames:
+            print(<span class="str">f&quot;[경고] {emp_id}: 프레임 {len(frames)}개 — 추가 수집 권장 (skip)&quot;</span>)
+            <span class="kw">continue</span>
+
+        train_f, tmp = train_test_split(
+            frames, test_size=<span class="nm">1</span> - train_ratio, random_state=<span class="nm">42</span>
+        )
+        <span class="cm"># tmp 를 val/test 로 절반씩 분할 (기본 15/15)</span>
+        val_f, test_f = train_test_split(tmp, test_size=<span class="nm">0.5</span>, random_state=<span class="nm">42</span>)
+
+        <span class="kw">for</span> split, files <span class="kw">in</span> [(<span class="str">&quot;train&quot;</span>, train_f), (<span class="str">&quot;val&quot;</span>, val_f), (<span class="str">&quot;test&quot;</span>, test_f)]:
+            dest = os.path.join(out_dir, split, emp_id)
+            os.makedirs(dest, exist_ok=<span class="kw">True</span>)
+            <span class="kw">for</span> f <span class="kw">in</span> files:
+                shutil.copy2(f, dest)
+        print(<span class="str">f&quot;  {emp_id}: train={len(train_f)} / val={len(val_f)} / test={len(test_f)}&quot;</span>)
+
+
+<span class="kw">if</span> __name__ == <span class="str">&quot;__main__&quot;</span>:
+    split_dataset(raw_dir=<span class="str">&quot;data/raw&quot;</span>, out_dir=<span class="str">&quot;data/splits&quot;</span>)</pre></div>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-icon">ℹ</div>
+          <div><strong>post_process=False 이유:</strong> MTCNN의 <code>post_process=True</code>(기본값)는 내부에서 <code>(x-127.5)/128.0</code> 정규화를 수행합니다. Dataset에서 다시 정규화하면 범위가 틀어집니다. 수집 시 <code>post_process=False</code>로 raw float을 저장하고, Dataset에서 한 번만 정규화하세요. <strong>[수정 #2]</strong> 단, 증강(<code>ColorJitter</code>)은 음수 범위에서 비정상 동작하므로 <code>[0,1]</code>로 스케일 → 증강 → <code>[-1,1]</code> 정규화 순서로 적용합니다.</div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 3 ─── -->
+      <section class="section" id="s3">
+        <div class="section-header">
+          <div class="section-num">03</div>
+          <div class="section-info">
+            <div class="section-title">직원 등록 & 임베딩 DB (재학습 없는 신규 추가)</div>
+            <div class="section-desc">분류기(Classifier) 대신 코사인 유사도로 인식 — 신규 직원은 임베딩만 DB에 저장하면 즉시 적용</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><div class="dot"></div> 인식 방식 비교 — 왜 코사인 유사도인가</div>
+          <div class="table-wrap">
+            <table class="exp-table">
+              <thead><tr><th>구분</th><th>Classifier (Linear)</th><th>Cosine Similarity ← 채택</th></tr></thead>
+              <tbody>
+                <tr><td>신규 직원 추가</td><td>num_classes 변경 → <strong>전체 재학습 필요</strong></td><td>임베딩 촬영 → DB INSERT → <strong>즉시 적용</strong></td></tr>
+                <tr><td>직원 삭제</td><td>재학습 필요</td><td>DB에서 해당 행 DELETE</td></tr>
+                <tr><td>인식 기준</td><td>softmax 확률</td><td>코사인 유사도 임계값 (≥ 0.7 권장)</td></tr>
+                <tr><td>모델 변경</td><td>새 직원마다 .pth 교체</td><td>backbone .pth 고정, DB만 변경</td></tr>
+                <tr><td>구현 복잡도</td><td>낮음</td><td>낮음 (DB 조회 추가)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-icon">ℹ</div>
+          <div><strong>동작 원리:</strong> InceptionResnetV1 backbone이 입력 얼굴을 <strong>512-dim 벡터</strong>로 변환합니다. 이 벡터를 직원 등록 시 DB에 저장해두고, 인식 시 실시간 벡터와의 코사인 유사도를 계산해 가장 높은 직원을 반환합니다. backbone 가중치(.pth)는 변하지 않으므로 재학습이 필요 없습니다.</div>
+        </div>
+
+        <div class="pipeline">
+          <div class="pipe-step hi">웹캠으로 얼굴 촬영</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step">MTCNN 검출</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step">backbone → 512-dim 벡터</div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-step hi">Employees DB에 BLOB 저장</div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>utils/registry.py</span> · 직원 등록 & 임베딩 저장</div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>직원 등록 &amp; 임베딩 DB + label_map 유틸.
+
+인식은 분류기(Classifier)가 아니라 코사인 유사도로 수행한다.
+신규 직원은 임베딩만 DB에 INSERT 하면 재학습 없이 즉시 적용된다.
+
+[FIX <span class="cm">#7] 등록 임베딩은 항상 FP32 로 계산/저장한다.</span>
+         (추론은 FP16 가속을 쓰더라도 등록과 정밀도를 일치시켜 threshold 근처
+          오인식을 줄인다. 등록은 <span class="nm">1</span>회성이라 FP32 비용이 무의미하다.)
+[FIX <span class="cm">#6] find_best_match 는 best_sim 초기값을 -1.0(코사인 최솟값)으로 두어</span>
+         모든 유사도가 음수인 경우에도 가장 높은 후보를 정확히 선택한다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> json
+<span class="kw">import</span> os
+<span class="kw">import</span> sqlite3
+
+<span class="kw">import</span> cv2
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">import</span> torch
+<span class="kw">from</span> facenet_pytorch <span class="kw">import</span> MTCNN, InceptionResnetV1
+<span class="kw">from</span> PIL <span class="kw">import</span> Image
+
+<span class="kw">from</span> . <span class="kw">import</span> DB_PATH
+
+
+<span class="kw">def</span> <span class="fn">_get_backbone</span>(device):
+    <span class="kw">return</span> InceptionResnetV1.from_pretrained(<span class="str">&quot;vggface2&quot;</span>).eval().to(device)
+
+
+<span class="kw">def</span> <span class="fn">_ensure_employees_table</span>(conn: sqlite3.Connection):
+    conn.executescript(
+        <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+        CREATE TABLE IF NOT EXISTS Employees (
+            emp_id    TEXT  PRIMARY KEY,
+            name      TEXT  NOT NULL,
+            embedding BLOB  NOT NULL
+        );
+        <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+    )
+    conn.commit()
+
+
+<span class="kw">def</span> <span class="fn">capture_embedding</span>(
+    emp_id: str,
+    name: str,
+    duration_sec: int = <span class="nm">5</span>,
+    n_frames: int = <span class="nm">10</span>,
+):
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>웹캠으로 얼굴 촬영 → 평균 임베딩(FP32) 계산 → Employees 테이블에 저장.
+
+    duration_sec 동안 최대 n_frames 개 임베딩을 평균내어 노이즈를 줄인다.
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+    device = torch.device(<span class="str">&quot;cuda&quot;</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="str">&quot;cpu&quot;</span>)
+    mtcnn = MTCNN(image_size=<span class="nm">160</span>, margin=<span class="nm">20</span>, post_process=<span class="kw">False</span>, device=device)
+    backbone = _get_backbone(device)  <span class="cm"># [FIX #7] FP32 그대로 사용 (half() 호출 안 함)</span>
+
+    cap = cv2.VideoCapture(<span class="nm">0</span>)
+    embeddings, collected = [], <span class="nm">0</span>
+    start = cv2.getTickCount()
+    print(<span class="str">f&quot;[{emp_id}] 촬영 시작 — {duration_sec}초 동안 정면을 바라보세요.&quot;</span>)
+
+    <span class="cm"># [FIX] 원본에서 끊겨 있던 while 조건 복원</span>
+    <span class="kw">while</span> cap.isOpened() <span class="kw">and</span> collected &lt; n_frames:
+        elapsed = (cv2.getTickCount() - start) / cv2.getTickFrequency()
+        <span class="kw">if</span> elapsed &gt; duration_sec:
+            <span class="kw">break</span>
+        ret, frame = cap.read()
+        <span class="kw">if</span> <span class="kw">not</span> ret:
+            <span class="kw">break</span>
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        boxes, probs = mtcnn.detect(img_pil)
+        <span class="kw">if</span> probs <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> probs[<span class="nm">0</span>] <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> probs[<span class="nm">0</span>] &gt;= <span class="nm">0.95</span>:
+            face = mtcnn(img_pil)
+            <span class="kw">if</span> face <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+                face = ((face - <span class="nm">127.5</span>) / <span class="nm">128.0</span>).unsqueeze(<span class="nm">0</span>).to(device)
+                <span class="kw">with</span> torch.no_grad():
+                    emb = backbone(face)  <span class="cm"># (1, 512) FP32</span>
+                    emb = torch.nn.functional.normalize(emb, p=<span class="nm">2</span>, dim=<span class="nm">1</span>)  <span class="cm"># L2 정규화</span>
+                embeddings.append(emb.squeeze(<span class="nm">0</span>).cpu())
+                collected += <span class="nm">1</span>
+                print(<span class="str">f&quot;  {collected}/{n_frames} 수집&quot;</span>, end=<span class="str">&quot;\r&quot;</span>)
+        cv2.imshow(<span class="str">&quot;직원 등록 — q로 중단&quot;</span>, frame)
+        <span class="kw">if</span> cv2.waitKey(<span class="nm">1</span>) &amp; <span class="nm">0</span>xFF == ord(<span class="str">&quot;q&quot;</span>):
+            <span class="kw">break</span>
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    <span class="kw">if</span> <span class="kw">not</span> embeddings:
+        <span class="kw">raise</span> RuntimeError(<span class="str">&quot;임베딩 수집 실패 — 얼굴이 감지되지 않았습니다.&quot;</span>)
+
+    <span class="cm"># n_frames 개 평균 → 대표 임베딩, 다시 L2 정규화</span>
+    mean_emb = torch.stack(embeddings).mean(dim=<span class="nm">0</span>)
+    mean_emb = torch.nn.functional.normalize(mean_emb, p=<span class="nm">2</span>, dim=<span class="nm">0</span>)
+    emb_bytes = mean_emb.numpy().astype(np.float32).tobytes()  <span class="cm"># FP32 BLOB 직렬화</span>
+
+    conn = sqlite3.connect(DB_PATH)
+    _ensure_employees_table(conn)
+    conn.execute(
+        <span class="str">&quot;INSERT OR REPLACE INTO Employees (emp_id, name, embedding) VALUES (?, ?, ?)&quot;</span>,
+        (emp_id, name, emb_bytes),
+    )
+    conn.commit()
+    conn.close()
+    print(<span class="str">f&quot;\n[완료] {name}({emp_id}) 등록됨 — {collected}프레임 평균 임베딩 저장&quot;</span>)
+
+
+<span class="kw">def</span> <span class="fn">load_all_embeddings</span>() -&gt; dict:
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>DB에서 전체 직원 임베딩 로드.
+
+    반환: {emp_id: {<span class="str">&quot;name&quot;</span>: str, <span class="str">&quot;embedding&quot;</span>: torch.Tensor(<span class="nm">512</span>,) FP32}}
+    main.py 시작 시 <span class="nm">1</span>회 호출하여 메모리에 캐싱한다.
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(<span class="str">&quot;SELECT emp_id, name, embedding FROM Employees&quot;</span>).fetchall()
+    conn.close()
+    result = {}
+    <span class="kw">for</span> emp_id, name, emb_blob <span class="kw">in</span> rows:
+        emb = torch.from_numpy(np.frombuffer(emb_blob, dtype=np.float32).copy())
+        result[emp_id] = {<span class="str">&quot;name&quot;</span>: name, <span class="str">&quot;embedding&quot;</span>: emb}
+    <span class="kw">return</span> result
+
+
+<span class="kw">def</span> <span class="fn">find_best_match</span>(
+    query_emb: torch.Tensor,
+    db_embeddings: dict,
+    threshold: float = <span class="nm">0.70</span>,
+) -&gt; tuple:
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>query_emb: 실시간 추론에서 얻은 (<span class="nm">512</span>,) L2-정규화 FP32 벡터.
+
+    반환: (emp_id, name, similarity) 또는 (<span class="kw">None</span>, <span class="str">&quot;unknown&quot;</span>, best_sim)
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+    best_id, best_sim = <span class="kw">None</span>, -<span class="nm">1.0</span>  <span class="cm"># [FIX #6] 코사인 최솟값으로 초기화</span>
+    <span class="kw">for</span> emp_id, data <span class="kw">in</span> db_embeddings.items():
+        <span class="cm"># 양쪽 모두 L2 정규화되어 있으므로 내적 = 코사인 유사도</span>
+        sim = torch.dot(query_emb, data[<span class="str">&quot;embedding&quot;</span>]).item()
+        <span class="kw">if</span> sim &gt; best_sim:
+            best_sim, best_id = sim, emp_id
+    <span class="kw">if</span> best_id <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> best_sim &gt;= threshold:
+        <span class="kw">return</span> best_id, db_embeddings[best_id][<span class="str">&quot;name&quot;</span>], best_sim
+    <span class="kw">return</span> <span class="kw">None</span>, <span class="str">&quot;unknown&quot;</span>, best_sim
+
+
+<span class="cm"># ── label_map 유틸 (분류기 학습/평가에서 사용) ──────────────────────────</span>
+<span class="kw">def</span> <span class="fn">build_label_map</span>(splits_train_dir: str = <span class="str">&quot;data/splits/train&quot;</span>,
+                    out_path: str = <span class="str">&quot;data/label_map.json&quot;</span>) -&gt; dict:
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>train 디렉토리의 emp_id 폴더를 정렬하여 {idx: emp_id} 매핑 생성/저장.
+
+    핵심: 인덱스 ↔ emp_id 매핑은 학습/평가 전 구간에서 일관되게 유지되어야 한다.
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+    emp_ids = sorted(
+        d <span class="kw">for</span> d <span class="kw">in</span> os.listdir(splits_train_dir)
+        <span class="kw">if</span> os.path.isdir(os.path.join(splits_train_dir, d))
+    )
+    label_map = {idx: emp_id <span class="kw">for</span> idx, emp_id <span class="kw">in</span> enumerate(emp_ids)}
+    os.makedirs(os.path.dirname(out_path), exist_ok=<span class="kw">True</span>)
+    <span class="kw">with</span> open(out_path, <span class="str">&quot;w&quot;</span>, encoding=<span class="str">&quot;utf-8&quot;</span>) <span class="kw">as</span> f:
+        json.dump(label_map, f, ensure_ascii=<span class="kw">False</span>, indent=<span class="nm">2</span>)
+    print(<span class="str">f&quot;label_map 저장: {out_path} ({len(label_map)}명)&quot;</span>)
+    <span class="kw">return</span> label_map
+
+
+<span class="kw">def</span> <span class="fn">load_label_map</span>(path: str = <span class="str">&quot;data/label_map.json&quot;</span>) -&gt; dict:
+    <span class="str">&quot;&quot;&quot;{int_idx: emp_id} 형태로 로드 (JSON 키는 문자열이므로 int 캐스팅).&quot;&quot;&quot;</span>
+    <span class="kw">with</span> open(path, <span class="str">&quot;r&quot;</span>, encoding=<span class="str">&quot;utf-8&quot;</span>) <span class="kw">as</span> f:
+        raw = json.load(f)
+    <span class="kw">return</span> {int(k): v <span class="kw">for</span> k, v <span class="kw">in</span> raw.items()}
+
+
+<span class="kw">if</span> __name__ == <span class="str">&quot;__main__&quot;</span>:
+    <span class="cm"># 신규 직원 등록 예시:</span>
+    <span class="cm">#   python -m utils.registry</span>
+    capture_embedding(<span class="str">&quot;E001&quot;</span>, <span class="str">&quot;홍길동&quot;</span>)</pre></div>
+        </div>
+
+        <div class="callout ok">
+          <div class="callout-icon">✓</div>
+          <div><strong>신규 직원 추가 흐름 (재학습 없음):</strong> ① <code>capture_embedding("E031", "신입사원")</code> 실행 → ② DB에 임베딩 자동 저장 → ③ <code>main.py</code> 재시작 시 <code>load_all_embeddings()</code>가 새 직원 포함하여 로드. <strong>모델 파일(.pth)은 전혀 변경 불필요.</strong></div>
+        </div>
+
+        <div class="callout warn">
+          <div class="callout-icon">⚠</div>
+          <div><strong>threshold 튜닝:</strong> 0.70은 시작점입니다. 조명/각도 변화가 크면 0.65까지 낮추고, 오인식이 잦으면 0.75로 높이세요. <code>evaluate.py</code>에서 threshold별 Precision/Recall 곡선을 그려 최적값을 찾는 것을 권장합니다.</div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 4 ─── -->
+      <section class="section" id="s4">
+        <div class="section-header">
+          <div class="section-num">04</div>
+          <div class="section-info">
+            <div class="section-title">모델 정의 & 학습 루프</div>
+            <div class="section-desc">InceptionResnetV1 backbone → 512-dim 임베딩 추출. 분류기는 학습용, 실제 인식은 코사인 유사도 사용</div>
+          </div>
+        </div>
+
+        <div class="tab-bar" id="tabs4">
+          <div class="tab active" onclick="switchTab('tabs4','content4','model')">모델 정의</div>
+          <div class="tab" onclick="switchTab('tabs4','content4','dataset')">Dataset 클래스</div>
+          <div class="tab" onclick="switchTab('tabs4','content4','train')">학습 루프</div>
+        </div>
+
+        <div id="content4-model" class="tab-content active">
+          <div class="code-wrap" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0; border-top:none; border-color:#d0d5e0;">
+            <div class="code-header">
+              <div class="code-filename"><span>models/classifier.py</span></div>
+              <button class="code-copy" onclick="copyCode(this)">copy</button>
+            </div>
+            <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>학습용 분류기 모델.
+
+주의: 실제 운영 인식은 main.py 의 코사인 유사도 방식이 담당한다.
+이 분류기는 backbone 품질을 검증/실험(EXP-<span class="nm">1</span>~<span class="nm">6</span>)하기 위한 용도다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+<span class="kw">from</span> facenet_pytorch <span class="kw">import</span> InceptionResnetV1
+
+
+<span class="kw">class</span> <span class="cls">FaceClassifier</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, num_classes: int = <span class="nm">30</span>, freeze_backbone: bool = <span class="kw">True</span>):
+        <span class="kw">super</span>().__init__()
+        <span class="cm"># pretrained=&#x27;vggface2&#x27;: VGGFace2 사전학습 가중치 (512-dim 임베딩)</span>
+        self.backbone = InceptionResnetV1.from_pretrained(<span class="str">&quot;vggface2&quot;</span>)
+        self.classifier = nn.Linear(<span class="nm">512</span>, num_classes)
+        <span class="kw">if</span> freeze_backbone:
+            <span class="kw">for</span> p <span class="kw">in</span> self.backbone.parameters():
+                p.requires_grad = <span class="kw">False</span>  <span class="cm"># Feature Extractor 전면 동결</span>
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x: torch.Tensor) -&gt; torch.Tensor:
+        embedding = self.backbone(x)  <span class="cm"># (B, 512)  ← frozen</span>
+        <span class="kw">return</span> self.classifier(embedding)  <span class="cm"># (B, num_classes) ← trainable</span>
+
+    <span class="kw">def</span> <span class="fn">unfreeze_last_blocks</span>(self, n: int = <span class="nm">2</span>):
+        <span class="str">&quot;&quot;&quot;EXP-2: 마지막 n개 block 만 Fine-tuning 해동.&quot;&quot;&quot;</span>
+        blocks = list(self.backbone.named_children())
+        <span class="kw">for</span> name, module <span class="kw">in</span> blocks[-n:]:
+            <span class="kw">for</span> p <span class="kw">in</span> module.parameters():
+                p.requires_grad = <span class="kw">True</span>
+            print(<span class="str">f&quot;Unfrozen block: {name}&quot;</span>)
+
+    <span class="kw">def</span> <span class="fn">get_embedding</span>(self, x: torch.Tensor) -&gt; torch.Tensor:
+        <span class="str">&quot;&quot;&quot;분류 없이 512-dim 임베딩만 추출.&quot;&quot;&quot;</span>
+        <span class="kw">with</span> torch.no_grad():
+            <span class="kw">return</span> self.backbone(x)</pre></div>
+          </div>
+        </div>
+
+        <div id="content4-dataset" class="tab-content">
+          <div class="code-wrap" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0; border-top:none; border-color:#d0d5e0;">
+            <div class="code-header">
+              <div class="code-filename"><span>utils/dataset.py</span></div>
+              <button class="code-copy" onclick="copyCode(this)">copy</button>
+            </div>
+            <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>PyTorch Dataset — raw float .pt 텐서를 로드하여 학습용 정규화 텐서 반환.
+
+[FIX <span class="cm">#2] 증강(ColorJitter/Flip)을 &#x27;정규화 이전&#x27;에 적용한다.</span>
+         - 저장된 텐서는 raw float(<span class="nm">0</span>~<span class="nm">255</span> 범위)이다.
+         - ColorJitter 는 [-<span class="nm">1</span>,<span class="nm">1</span>] 음수 범위에서 비정상 동작하므로,
+           먼저 [<span class="nm">0</span>,<span class="nm">1</span>] 로 스케일 → 증강 → 그 다음 InceptionResnet 범위([-<span class="nm">1</span>,<span class="nm">1</span>])로 정규화.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> os
+
+<span class="kw">import</span> torch
+<span class="kw">from</span> torch.utils.data <span class="kw">import</span> Dataset
+<span class="kw">from</span> torchvision <span class="kw">import</span> transforms
+
+
+<span class="kw">class</span> <span class="cls">FaceDataset</span>(Dataset):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, root_dir: str, label_map: dict, augment: bool = <span class="kw">False</span>):
+        <span class="str">&quot;&quot;</span><span class="str">&quot;</span>root_dir: data/splits/{train|val|test}/
+        label_map: {int_idx: emp_id}  ← registry.load_label_map()
+        <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+        self.samples = []
+        <span class="cm"># idx ↔ emp_id 역방향 매핑 (emp_id → idx)</span>
+        reverse_map = {v: k <span class="kw">for</span> k, v <span class="kw">in</span> label_map.items()}
+
+        <span class="kw">for</span> emp_id <span class="kw">in</span> sorted(os.listdir(root_dir)):
+            <span class="kw">if</span> emp_id <span class="kw">not</span> <span class="kw">in</span> reverse_map:
+                <span class="kw">continue</span>
+            idx = reverse_map[emp_id]
+            emp_dir = os.path.join(root_dir, emp_id)
+            <span class="kw">if</span> <span class="kw">not</span> os.path.isdir(emp_dir):
+                <span class="kw">continue</span>
+            <span class="kw">for</span> fname <span class="kw">in</span> os.listdir(emp_dir):
+                <span class="kw">if</span> fname.endswith(<span class="str">&quot;.pt&quot;</span>):
+                    self.samples.append((os.path.join(emp_dir, fname), idx))
+
+        <span class="cm"># 증강은 학습 split 에만 적용 (val/test 는 augment=False)</span>
+        <span class="cm"># ColorJitter 는 [0,1] 범위 입력을 기대하므로 정규화 &#x27;이전&#x27;에 적용한다.</span>
+        self.aug = (
+            transforms.Compose(
+                [
+                    transforms.RandomHorizontalFlip(p=<span class="nm">0.5</span>),
+                    transforms.ColorJitter(
+                        brightness=<span class="nm">0.2</span>, contrast=<span class="nm">0.2</span>, saturation=<span class="nm">0.1</span>
+                    ),
+                ]
+            )
+            <span class="kw">if</span> augment
+            <span class="kw">else</span> <span class="kw">None</span>
+        )
+
+    <span class="kw">def</span> <span class="fn">__getitem__</span>(self, idx):
+        path, label = self.samples[idx]
+        tensor = torch.load(path)  <span class="cm"># (3, 160, 160) raw float (0~255 범위)</span>
+
+        <span class="kw">if</span> self.aug <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+            <span class="cm"># [FIX #2] 정규화 이전, [0,1] 범위에서 증강</span>
+            tensor = (tensor / <span class="nm">255.0</span>).clamp(<span class="nm">0.0</span>, <span class="nm">1.0</span>)
+            tensor = self.aug(tensor)
+            <span class="cm"># 증강 후 InceptionResnet 입력 범위 [-1,1] 로 변환</span>
+            tensor = tensor * <span class="nm">2.0</span> - <span class="nm">1.0</span>
+        <span class="kw">else</span>:
+            <span class="cm"># 증강 없을 때는 기존과 동일한 정규화: (x-127.5)/128 ≈ [-1,1]</span>
+            tensor = (tensor - <span class="nm">127.5</span>) / <span class="nm">128.0</span>
+
+        <span class="kw">return</span> tensor, label
+
+    <span class="kw">def</span> <span class="fn">__len__</span>(self):
+        <span class="kw">return</span> len(self.samples)</pre></div>
+          </div>
+        </div>
+
+        <div id="content4-train" class="tab-content">
+          <div class="code-wrap" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0; border-top:none; border-color:#d0d5e0;">
+            <div class="code-header">
+              <div class="code-filename"><span>train.py</span></div>
+              <button class="code-copy" onclick="copyCode(this)">copy</button>
+            </div>
+            <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>분류기 학습 루프 (EXP-<span class="nm">1</span>~<span class="nm">6</span> 실험용).
+
+label_map.json 이 없으면 자동 생성한다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> os
+
+<span class="kw">import</span> torch
+<span class="kw">import</span> torch.nn <span class="kw">as</span> nn
+<span class="kw">from</span> torch.optim.lr_scheduler <span class="kw">import</span> CosineAnnealingLR
+<span class="kw">from</span> torch.utils.data <span class="kw">import</span> DataLoader
+<span class="kw">from</span> torch.utils.tensorboard <span class="kw">import</span> SummaryWriter
+
+<span class="kw">from</span> models.classifier <span class="kw">import</span> FaceClassifier
+<span class="kw">from</span> utils.dataset <span class="kw">import</span> FaceDataset
+<span class="kw">from</span> utils.registry <span class="kw">import</span> build_label_map, load_label_map
+
+
+<span class="kw">def</span> <span class="fn">evaluate</span>(model, loader, device) -&gt; float:
+    model.eval()
+    correct, total = <span class="nm">0</span>, <span class="nm">0</span>
+    <span class="kw">with</span> torch.no_grad():
+        <span class="kw">for</span> imgs, labels <span class="kw">in</span> loader:
+            imgs, labels = imgs.to(device), labels.to(device)
+            preds = model(imgs).argmax(<span class="nm">1</span>)
+            correct += (preds == labels).sum().item()
+            total += labels.size(<span class="nm">0</span>)
+    <span class="kw">return</span> correct / total <span class="kw">if</span> total <span class="kw">else</span> <span class="nm">0.0</span>
+
+
+<span class="kw">def</span> <span class="fn">train</span>(config: dict):
+    device = torch.device(<span class="str">&quot;cuda&quot;</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="str">&quot;cpu&quot;</span>)
+    writer = SummaryWriter(<span class="str">f&quot;runs/{config[&#x27;exp_name&#x27;]}&quot;</span>)
+
+    label_map_path = <span class="str">&quot;data/label_map.json&quot;</span>
+    <span class="kw">if</span> <span class="kw">not</span> os.path.exists(label_map_path):
+        build_label_map(config[<span class="str">&quot;train_dir&quot;</span>], label_map_path)
+    lmap = load_label_map(label_map_path)
+
+    train_ds = FaceDataset(config[<span class="str">&quot;train_dir&quot;</span>], lmap, augment=<span class="kw">True</span>)
+    val_ds = FaceDataset(config[<span class="str">&quot;val_dir&quot;</span>], lmap, augment=<span class="kw">False</span>)
+    tl = DataLoader(train_ds, batch_size=<span class="nm">32</span>, shuffle=<span class="kw">True</span>, num_workers=<span class="nm">4</span>, pin_memory=<span class="kw">True</span>)
+    vl = DataLoader(val_ds, batch_size=<span class="nm">32</span>, shuffle=<span class="kw">False</span>, num_workers=<span class="nm">4</span>, pin_memory=<span class="kw">True</span>)
+
+    model = FaceClassifier(
+        num_classes=len(lmap), freeze_backbone=config[<span class="str">&quot;freeze&quot;</span>]
+    ).to(device)
+    <span class="kw">if</span> config.get(<span class="str">&quot;unfreeze_blocks&quot;</span>):
+        model.unfreeze_last_blocks(config[<span class="str">&quot;unfreeze_blocks&quot;</span>])
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(
+        filter(<span class="kw">lambda</span> p: p.requires_grad, model.parameters()),
+        lr=config[<span class="str">&quot;lr&quot;</span>],
+        weight_decay=<span class="nm">1</span>e-<span class="nm">4</span>,
+    )
+    scheduler = CosineAnnealingLR(optimizer, T_max=config[<span class="str">&quot;epochs&quot;</span>], eta_min=<span class="nm">1</span>e-<span class="nm">6</span>)
+
+    best_val, patience, no_imp = <span class="nm">0.0</span>, <span class="nm">10</span>, <span class="nm">0</span>
+    <span class="kw">for</span> epoch <span class="kw">in</span> range(config[<span class="str">&quot;epochs&quot;</span>]):
+        model.train()
+        t_loss = <span class="nm">0.0</span>
+        <span class="kw">for</span> imgs, labels <span class="kw">in</span> tl:
+            imgs, labels = imgs.to(device), labels.to(device)
+            optimizer.zero_grad()
+            loss = criterion(model(imgs), labels)
+            loss.backward()
+            optimizer.step()
+            t_loss += loss.item()
+
+        val_acc = evaluate(model, vl, device)
+        scheduler.step()
+
+        writer.add_scalar(<span class="str">&quot;Loss/train&quot;</span>, t_loss / len(tl), epoch)
+        writer.add_scalar(<span class="str">&quot;Acc/val&quot;</span>, val_acc, epoch)
+        writer.add_scalar(<span class="str">&quot;LR&quot;</span>, optimizer.param_groups[<span class="nm">0</span>][<span class="str">&quot;lr&quot;</span>], epoch)
+        print(
+            <span class="str">f&quot;Epoch {epoch + 1:3d} | loss={t_loss / len(tl):.4f} | val_acc={val_acc:.4f}&quot;</span>
+        )
+
+        <span class="kw">if</span> val_acc &gt; best_val:
+            best_val, no_imp = val_acc, <span class="nm">0</span>
+            torch.save(model.state_dict(), <span class="str">f&quot;models/{config[&#x27;exp_name&#x27;]}_best.pth&quot;</span>)
+        <span class="kw">else</span>:
+            no_imp += <span class="nm">1</span>
+            <span class="kw">if</span> no_imp &gt;= patience:
+                print(<span class="str">f&quot;Early stopping @ epoch {epoch + 1}&quot;</span>)
+                <span class="kw">break</span>
+
+    writer.close()
+    print(<span class="str">f&quot;Best val_acc: {best_val:.4f}&quot;</span>)
+
+
+<span class="kw">if</span> __name__ == <span class="str">&quot;__main__&quot;</span>:
+    train(
+        {
+            <span class="str">&quot;exp_name&quot;</span>: <span class="str">&quot;exp01_transfer_frozen&quot;</span>,
+            <span class="str">&quot;train_dir&quot;</span>: <span class="str">&quot;data/splits/train&quot;</span>,
+            <span class="str">&quot;val_dir&quot;</span>: <span class="str">&quot;data/splits/val&quot;</span>,
+            <span class="str">&quot;epochs&quot;</span>: <span class="nm">50</span>,
+            <span class="str">&quot;lr&quot;</span>: <span class="nm">1</span>e-<span class="nm">3</span>,
+            <span class="str">&quot;freeze&quot;</span>: <span class="kw">True</span>,
+            <span class="str">&quot;unfreeze_blocks&quot;</span>: <span class="kw">None</span>,
+        }
+    )</pre></div>
+          </div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 5 ─── -->
+      <section class="section" id="s5">
+        <div class="section-header">
+          <div class="section-num">05</div>
+          <div class="section-info">
+            <div class="section-title">실험 설계 & 최종 평가 (evaluate.py)</div>
+            <div class="section-desc">6가지 실험 변수 비교 + Test set F1-score / Confusion Matrix / Inference Time 측정</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><div class="dot"></div> 실험 매트릭스 — config 변수 하나로 전환</div>
+          <div class="table-wrap">
+            <table class="exp-table">
+              <thead>
+                <tr><th>ID</th><th>실험 변수</th><th>조건 A</th><th>조건 B</th><th>측정 지표</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><span class="badge badge-b">EXP-1</span></td><td>학습 전략</td><td>Transfer (freeze=True)</td><td>Scratch (random init)</td><td>Epoch별 Val Acc, 수렴 속도</td></tr>
+                <tr><td><span class="badge badge-b">EXP-2</span></td><td>Freezing 범위</td><td>전면 동결</td><td>마지막 2 block unfreeze</td><td>Val Acc, Overfitting 유무</td></tr>
+                <tr><td><span class="badge badge-g">EXP-3</span></td><td>데이터 양</td><td>정적 사진 5장/인</td><td>동영상 프레임 ≥50장/인</td><td>Test Acc, F1-score</td></tr>
+                <tr><td><span class="badge badge-g">EXP-4</span></td><td>노이즈 필터</td><td>conf ≥ 0.95 필터링</td><td>필터 없음 (raw)</td><td>Loss Curve 안정성</td></tr>
+                <tr><td><span class="badge badge-y">EXP-5</span></td><td>Optimizer</td><td>Adam (lr=1e-3)</td><td>SGD (lr=1e-2, m=0.9)</td><td>Loss 수렴 형태</td></tr>
+                <tr><td><span class="badge badge-y">EXP-6</span></td><td>LR 스케줄</td><td>Fixed LR</td><td>CosineAnnealingLR</td><td>Val Acc 정체 구간 돌파</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>evaluate.py</span> · Test set 최종 평가 + Inference Time 측정</div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>Test set 최종 평가 + Inference Time 측정.
+
+classification_report / confusion_matrix / FPS 를 출력한다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> time
+
+<span class="kw">import</span> torch
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> classification_report, confusion_matrix
+<span class="kw">from</span> torch.utils.data <span class="kw">import</span> DataLoader
+
+<span class="kw">from</span> models.classifier <span class="kw">import</span> FaceClassifier
+<span class="kw">from</span> utils.dataset <span class="kw">import</span> FaceDataset
+<span class="kw">from</span> utils.registry <span class="kw">import</span> load_label_map
+
+
+<span class="kw">def</span> <span class="fn">run_evaluation</span>(model_path: str, test_dir: str):
+    device = torch.device(<span class="str">&quot;cuda&quot;</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="str">&quot;cpu&quot;</span>)
+    lmap = load_label_map()  <span class="cm"># {idx: emp_id}</span>
+    test_ds = FaceDataset(test_dir, lmap, augment=<span class="kw">False</span>)
+    <span class="cm"># batch=1: 정확한 per-frame latency 측정</span>
+    loader = DataLoader(test_ds, batch_size=<span class="nm">1</span>, shuffle=<span class="kw">False</span>)
+
+    model = FaceClassifier(num_classes=len(lmap)).to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+
+    all_preds, all_labels, latencies = [], [], []
+    <span class="kw">with</span> torch.no_grad():
+        <span class="kw">for</span> imgs, labels <span class="kw">in</span> loader:
+            imgs = imgs.to(device)
+            <span class="kw">if</span> device.type == <span class="str">&quot;cuda&quot;</span>:
+                torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            preds = model(imgs).argmax(<span class="nm">1</span>)
+            <span class="kw">if</span> device.type == <span class="str">&quot;cuda&quot;</span>:
+                torch.cuda.synchronize()
+            latencies.append((time.perf_counter() - t0) * <span class="nm">1000</span>)  <span class="cm"># ms</span>
+            all_preds.extend(preds.cpu().tolist())
+            all_labels.extend(labels.tolist())
+
+    <span class="cm"># ── 성능 리포트 ─────────────</span>
+    target_names = [lmap[i] <span class="kw">for</span> i <span class="kw">in</span> range(len(lmap))]
+    print(classification_report(all_labels, all_preds, target_names=target_names))
+    print(<span class="str">&quot;Confusion Matrix:\n&quot;</span>, confusion_matrix(all_labels, all_preds))
+
+    avg_ms = sum(latencies) / len(latencies)
+    fps = <span class="nm">1000</span> / avg_ms
+    print(<span class="str">f&quot;\nInference Time: {avg_ms:.2f} ms/frame  ({fps:.1f} FPS)&quot;</span>)
+    print(<span class="str">f&quot;목표 FPS ≥15: {&#x27;✓ 달성&#x27; if fps &gt;= 15 else &#x27;✗ 미달 — 최적화 필요&#x27;}&quot;</span>)
+
+
+<span class="kw">if</span> __name__ == <span class="str">&quot;__main__&quot;</span>:
+    run_evaluation(<span class="str">&quot;models/exp01_transfer_frozen_best.pth&quot;</span>, <span class="str">&quot;data/splits/test&quot;</span>)</pre></div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 6 ─── -->
+      <section class="section" id="s6">
+        <div class="section-header">
+          <div class="section-num">06</div>
+          <div class="section-info">
+            <div class="section-title">SQLite DB 생성 & 상태 머신 (utils/database.py)</div>
+            <div class="section-desc">DB 파일 초기 생성 SQL → 상태 전이 로직 → AttendanceDB 클래스</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><div class="dot g"></div> 테이블 구조 한눈에 보기</div>
+          <div class="table-wrap">
+            <table class="exp-table">
+              <thead><tr><th>테이블</th><th>컬럼</th><th>타입</th><th>설명</th></tr></thead>
+              <tbody>
+                <tr><td rowspan="3"><code>Employees</code></td><td>emp_id</td><td>TEXT PK</td><td>직원 고유 ID (예: E001)</td></tr>
+                <tr><td>name</td><td>TEXT</td><td>직원 이름</td></tr>
+                <tr><td>embedding</td><td>BLOB</td><td>512-dim float32 벡터 (직렬화)</td></tr>
+                <tr><td rowspan="5"><code>AttendanceLog</code></td><td>log_id</td><td>INTEGER PK</td><td>자동 증가</td></tr>
+                <tr><td>emp_id</td><td>TEXT</td><td>Employees.emp_id 참조</td></tr>
+                <tr><td>date</td><td>TEXT</td><td>YYYY-MM-DD</td></tr>
+                <tr><td>time</td><td>TEXT</td><td>HH:MM:SS</td></tr>
+                <tr><td>state</td><td>TEXT</td><td>'출근' | '외출' | '복귀' | '퇴근'</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>SQL</span> · DB 파일 최초 생성 (한 번만 실행)</div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="cm">-- attendance.db 최초 생성 스크립트
+-- 실행: python -c "import sqlite3; conn=sqlite3.connect('/mnt/nas/attendance.db'); conn.executescript(open('init_db.sql').read()); conn.close()"
+-- 또는 utils/database.py의 AttendanceDB() 인스턴스 생성 시 자동 실행됨</span>
+
+<span class="cm">-- ── 직원 테이블 ────────────────────────────────────────────────</span>
+<span class="kw">CREATE TABLE IF NOT EXISTS</span> <span class="cls">Employees</span> (
+    emp_id    <span class="nm">TEXT</span>    <span class="kw">PRIMARY KEY</span>,
+    name      <span class="nm">TEXT</span>    <span class="kw">NOT NULL</span>,
+    embedding <span class="nm">BLOB</span>    <span class="kw">NOT NULL</span>   <span class="cm">-- 512-dim float32, tobytes() 직렬화</span>
+);
+
+<span class="cm">-- ── 근태 로그 테이블 ─────────────────────────────────────────────</span>
+<span class="kw">CREATE TABLE IF NOT EXISTS</span> <span class="cls">AttendanceLog</span> (
+    log_id  <span class="nm">INTEGER</span>  <span class="kw">PRIMARY KEY AUTOINCREMENT</span>,
+    emp_id  <span class="nm">TEXT</span>     <span class="kw">NOT NULL</span>,
+    date    <span class="nm">TEXT</span>     <span class="kw">NOT NULL</span>,   <span class="cm">-- YYYY-MM-DD</span>
+    time    <span class="nm">TEXT</span>     <span class="kw">NOT NULL</span>,   <span class="cm">-- HH:MM:SS</span>
+    state   <span class="nm">TEXT</span>     <span class="kw">NOT NULL</span>,   <span class="cm">-- '출근' | '외출' | '복귀' | '퇴근'</span>
+    <span class="kw">FOREIGN KEY</span> (emp_id) <span class="kw">REFERENCES</span> <span class="cls">Employees</span>(emp_id)
+);
+
+<span class="cm">-- ── 인덱스: 당일 조회 속도 최적화 ──────────────────────────────────</span>
+<span class="kw">CREATE INDEX IF NOT EXISTS</span> idx_log_emp_date
+    <span class="kw">ON</span> <span class="cls">AttendanceLog</span>(emp_id, date);
+
+<span class="cm">-- ── 사용 예시 쿼리 ───────────────────────────────────────────────</span>
+<span class="cm">-- 오늘 특정 직원의 마지막 상태 확인</span>
+<span class="cm">-- SELECT state FROM AttendanceLog</span>
+<span class="cm">--   WHERE emp_id='E001' AND date='2025-01-15'</span>
+<span class="cm">--   ORDER BY log_id DESC LIMIT 1;</span>
+
+<span class="cm">-- 오늘 전체 직원 출퇴근 현황</span>
+<span class="cm">-- SELECT e.name, a.state, a.time</span>
+<span class="cm">-- FROM AttendanceLog a JOIN Employees e ON a.emp_id = e.emp_id</span>
+<span class="cm">-- WHERE a.date = date('now')</span>
+<span class="cm">-- GROUP BY a.emp_id HAVING a.log_id = MAX(a.log_id);</span></pre></div>
+        </div>
+
+        <div class="state-grid" style="margin: 20px 0 16px;">
+          <div class="state-card">
+            <div class="state-from">기록 없음 / NULL</div>
+            <div class="state-name">오늘 첫 방문</div>
+            <div class="state-to"><span class="badge badge-b">출근</span></div>
+          </div>
+          <div class="state-card">
+            <div class="state-from">최근 상태 = 출근</div>
+            <div class="state-name">근무 중</div>
+            <div class="state-to"><span class="badge badge-y">외출</span><span class="badge badge-r">퇴근</span></div>
+          </div>
+          <div class="state-card">
+            <div class="state-from">최근 상태 = 외출</div>
+            <div class="state-name">외출 중</div>
+            <div class="state-to"><span class="badge badge-g">복귀</span></div>
+          </div>
+          <div class="state-card">
+            <div class="state-from">최근 상태 = 복귀</div>
+            <div class="state-name">복귀 후</div>
+            <div class="state-to"><span class="badge badge-y">외출</span><span class="badge badge-r">퇴근</span></div>
+          </div>
+          <div class="state-card">
+            <div class="state-from">최근 상태 = 퇴근</div>
+            <div class="state-name">당일 퇴근 완료</div>
+            <div class="state-to"><span style="font-size:11px; color: var(--muted);">없음 (비활성)</span></div>
+          </div>
+        </div>
+
+        <div class="code-wrap">
+          <div class="code-header">
+            <div class="code-filename"><span>utils/database.py</span></div>
+            <button class="code-copy" onclick="copyCode(this)">copy</button>
+          </div>
+          <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>SQLite 근태 DB + 상태 머신.
+
+상태 전이:
+  <span class="kw">None</span>(오늘 첫 방문) → 출근
+  출근              → 외출 | 퇴근
+  외출              → 복귀
+  복귀              → 외출 | 퇴근
+  퇴근              → (없음, 당일 종료)
+
+마지막 상태는 ORDER BY log_id DESC 로 조회한다(시간 문자열 정렬에 의존하지 않음).
+주의: 자정을 넘기는 야간 근무는 date.today() 기준이라 지원 범위 밖이다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> os
+<span class="kw">import</span> sqlite3
+<span class="kw">from</span> datetime <span class="kw">import</span> date, datetime
+<span class="kw">from</span> typing <span class="kw">import</span> List, Optional
+
+<span class="kw">from</span> . <span class="kw">import</span> DB_PATH
+
+
+<span class="kw">class</span> <span class="cls">AttendanceDB</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, db_path: Optional[str] = <span class="kw">None</span>):
+        self.db_path = db_path <span class="kw">or</span> DB_PATH
+        <span class="cm"># NAS 경로의 상위 디렉토리가 없으면 즉시 알 수 있게 함</span>
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=<span class="kw">False</span>)
+        self._init_schema()
+
+    <span class="kw">def</span> <span class="fn">_init_schema</span>(self):
+        self.conn.executescript(
+            <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+            CREATE TABLE IF NOT EXISTS Employees (
+                emp_id    TEXT  PRIMARY KEY,
+                name      TEXT  NOT NULL,
+                embedding BLOB  NOT NULL    -- <span class="nm">512</span>-dim float32 직렬화
+            );
+            CREATE TABLE IF NOT EXISTS AttendanceLog (
+                log_id  INTEGER  PRIMARY KEY AUTOINCREMENT,
+                emp_id  TEXT     NOT NULL,
+                date    TEXT     NOT NULL,
+                time    TEXT     NOT NULL,
+                state   TEXT     NOT NULL,
+                FOREIGN KEY (emp_id) REFERENCES Employees(emp_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_log_emp_date
+                ON AttendanceLog(emp_id, date);
+            <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+        )
+        self.conn.commit()
+
+    <span class="cm"># 상태 머신 정의 — 단일 출처(single source of truth)</span>
+    TRANSITIONS = {
+        <span class="kw">None</span>: [<span class="str">&quot;출근&quot;</span>],
+        <span class="str">&quot;출근&quot;</span>: [<span class="str">&quot;외출&quot;</span>, <span class="str">&quot;퇴근&quot;</span>],
+        <span class="str">&quot;외출&quot;</span>: [<span class="str">&quot;복귀&quot;</span>],
+        <span class="str">&quot;복귀&quot;</span>: [<span class="str">&quot;외출&quot;</span>, <span class="str">&quot;퇴근&quot;</span>],
+        <span class="str">&quot;퇴근&quot;</span>: [],
+    }
+
+    <span class="kw">def</span> <span class="fn">get_last_state</span>(self, emp_id: str) -&gt; Optional[str]:
+        today = date.today().isoformat()
+        cur = self.conn.execute(
+            <span class="str">&quot;SELECT state FROM AttendanceLog &quot;</span>
+            <span class="str">&quot;WHERE emp_id=? AND date=? ORDER BY log_id DESC LIMIT 1&quot;</span>,
+            (emp_id, today),
+        )
+        row = cur.fetchone()
+        <span class="kw">return</span> row[<span class="nm">0</span>] <span class="kw">if</span> row <span class="kw">else</span> <span class="kw">None</span>
+
+    <span class="kw">def</span> <span class="fn">get_available_actions</span>(self, emp_id: str) -&gt; List[str]:
+        <span class="str">&quot;&quot;&quot;현재 상태 → 가능한 액션 리스트 반환.&quot;&quot;&quot;</span>
+        <span class="kw">return</span> self.TRANSITIONS.get(self.get_last_state(emp_id), [])
+
+    <span class="kw">def</span> <span class="fn">log_action</span>(self, emp_id: str, state: str):
+        <span class="str">&quot;&quot;&quot;유효성 검사 후 로그 INSERT.&quot;&quot;&quot;</span>
+        valid = self.get_available_actions(emp_id)
+        <span class="kw">if</span> state <span class="kw">not</span> <span class="kw">in</span> valid:
+            <span class="kw">raise</span> ValueError(
+                <span class="str">f&quot;유효하지 않은 전이: {self.get_last_state(emp_id)} → {state}&quot;</span>
+            )
+        now = datetime.now()
+        self.conn.execute(
+            <span class="str">&quot;INSERT INTO AttendanceLog (emp_id, date, time, state) VALUES (?,?,?,?)&quot;</span>,
+            (emp_id, now.strftime(<span class="str">&quot;%Y-%m-%d&quot;</span>), now.strftime(<span class="str">&quot;%H:%M:%S&quot;</span>), state),
+        )
+        self.conn.commit()
+
+    <span class="kw">def</span> <span class="fn">get_employee_name</span>(self, emp_id: str) -&gt; str:
+        cur = self.conn.execute(
+            <span class="str">&quot;SELECT name FROM Employees WHERE emp_id=?&quot;</span>, (emp_id,)
+        )
+        row = cur.fetchone()
+        <span class="kw">return</span> row[<span class="nm">0</span>] <span class="kw">if</span> row <span class="kw">else</span> emp_id  <span class="cm"># 미등록 시 emp_id 반환</span>
+
+    <span class="kw">def</span> <span class="fn">close</span>(self):
+        self.conn.close()</pre></div>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-icon">ℹ</div>
+          <div><strong>INDEX 추가 이유:</strong> 직원×일자 복합 조건 조회(<code>WHERE emp_id=? AND date=?</code>)가 매 프레임마다 실행됩니다. 인덱스 없이 30명×수백 건이 쌓이면 조회 지연이 FPS에 영향을 줍니다.</div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 7 ─── -->
+      <section class="section" id="s7">
+        <div class="section-header">
+          <div class="section-num">07</div>
+          <div class="section-info">
+            <div class="section-title">실시간 추론 메인 루프 (main.py)</div>
+            <div class="section-desc">실루엣 BBox 트리거 → 5프레임 투표 확정 → 상태 머신 UI</div>
+          </div>
+        </div>
+
+        <div class="grid3" style="margin-bottom: 14px;">
+          <div class="stat"><div class="stat-label">목표 FPS</div><div class="stat-val">≥15</div><div class="stat-sub">프레임당 ≤67ms</div></div>
+          <div class="stat"><div class="stat-label">유사도 임계값</div><div class="stat-val">0.70</div><div class="stat-sub">코사인 유사도</div></div>
+          <div class="stat"><div class="stat-label">투표 프레임</div><div class="stat-val">5</div><div class="stat-sub">오인식 방지</div></div>
+        </div>
+
+        <div class="tab-bar" id="tabs7">
+          <div class="tab active" onclick="switchTab('tabs7','content7','main')">main.py</div>
+          <div class="tab" onclick="switchTab('tabs7','content7','camera')">utils/camera.py</div>
+        </div>
+
+        <div id="content7-main" class="tab-content active">
+          <div class="code-wrap" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0; border-top:none; border-color:#d0d5e0;">
+            <div class="code-header">
+              <div class="code-filename"><span>main.py</span></div>
+              <button class="code-copy" onclick="copyCode(this)">copy</button>
+            </div>
+            <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>실시간 추론 메인 루프.
+
+파이프라인: 실루엣 BBox 트리거 → MTCNN → backbone(<span class="nm">512</span>-dim) →
+            코사인 유사도 매칭 → N프레임 투표 확정 → 상태 머신 팝업.
+
+[FIX <span class="cm">#4] 투표 버퍼가 서로 다른 사람을 섞지 않도록 처리.</span>
+         - 직전과 다른 emp_id 가 들어오면 버퍼를 비우고 새로 시작한다.
+         - deque(maxlen=VOTE_N) 로 최근 N개만 유지한다.
+[FIX <span class="cm">#7] 등록 임베딩은 FP32 이므로, 추론 임베딩도 비교 직전 .float() 로 맞춘다.</span>
+         USE_FP16 를 <span class="kw">True</span> 로 두면 backbone 추론만 FP16 가속하되 비교는 FP32 로 수행.
+         정밀도 불일치가 우려되면 USE_FP16=<span class="kw">False</span> 로 두면 등록과 완전히 일치한다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> os
+<span class="kw">from</span> collections <span class="kw">import</span> deque
+
+<span class="kw">import</span> cv2
+<span class="kw">import</span> torch
+<span class="kw">from</span> facenet_pytorch <span class="kw">import</span> MTCNN, InceptionResnetV1
+<span class="kw">from</span> PIL <span class="kw">import</span> Image
+
+<span class="kw">from</span> utils <span class="kw">import</span> DB_PATH
+<span class="kw">from</span> utils.camera <span class="kw">import</span> draw_hud, draw_silhouette, show_action_popup
+<span class="kw">from</span> utils.database <span class="kw">import</span> AttendanceDB
+<span class="kw">from</span> utils.registry <span class="kw">import</span> find_best_match, load_all_embeddings
+
+SILHOUETTE = (<span class="nm">220</span>, <span class="nm">80</span>, <span class="nm">420</span>, <span class="nm">380</span>)  <span class="cm"># (x1, y1, x2, y2)</span>
+SIM_THR = <span class="nm">0.70</span>  <span class="cm"># 코사인 유사도 임계값</span>
+VOTE_N = <span class="nm">5</span>  <span class="cm"># 연속 N프레임 동일 인식 시 확정</span>
+USE_FP16 = <span class="kw">True</span>  <span class="cm"># CUDA 에서 backbone 추론 FP16 가속 (비교는 항상 FP32)</span>
+
+
+<span class="kw">def</span> <span class="fn">check_nas_mount</span>():
+    nas_dir = os.path.dirname(DB_PATH)
+    <span class="cm"># 루트나 상대경로면 마운트 검사를 건너뛴다(로컬 테스트 허용)</span>
+    <span class="kw">if</span> nas_dir <span class="kw">and</span> nas_dir <span class="kw">not</span> <span class="kw">in</span> (<span class="str">&quot;.&quot;</span>, <span class="str">&quot;/&quot;</span>) <span class="kw">and</span> <span class="kw">not</span> os.path.ismount(nas_dir):
+        <span class="cm"># 디렉토리 자체는 존재하지만 마운트가 아닐 수도 있으니 경고만</span>
+        <span class="kw">if</span> <span class="kw">not</span> os.path.isdir(nas_dir):
+            <span class="kw">raise</span> RuntimeError(<span class="str">f&quot;NAS 경로 없음: {nas_dir}&quot;</span>)
+        print(<span class="str">f&quot;[경고] {nas_dir} 가 마운트 지점이 아닙니다 — 로컬 디렉토리로 진행&quot;</span>)
+
+
+<span class="kw">def</span> <span class="fn">main</span>():
+    check_nas_mount()
+    device = torch.device(<span class="str">&quot;cuda&quot;</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="str">&quot;cpu&quot;</span>)
+    use_fp16 = USE_FP16 <span class="kw">and</span> device.type == <span class="str">&quot;cuda&quot;</span>
+
+    mtcnn = MTCNN(image_size=<span class="nm">160</span>, margin=<span class="nm">20</span>, post_process=<span class="kw">False</span>, device=device)
+    backbone = InceptionResnetV1.from_pretrained(<span class="str">&quot;vggface2&quot;</span>).eval().to(device)
+    <span class="kw">if</span> use_fp16:
+        backbone.half()  <span class="cm"># FP16: 속도 ~1.5x (비교 전 .float() 로 되돌림)</span>
+
+    db_embeddings = load_all_embeddings()  <span class="cm"># {emp_id: {name, embedding(FP32)}}</span>
+    print(<span class="str">f&quot;등록 직원 {len(db_embeddings)}명 로드 완료&quot;</span>)
+    <span class="kw">if</span> <span class="kw">not</span> db_embeddings:
+        print(<span class="str">&quot;[경고] 등록된 직원이 없습니다. registry.capture_embedding() 으로 먼저 등록하세요.&quot;</span>)
+
+    db = AttendanceDB()
+    cap = cv2.VideoCapture(<span class="nm">0</span>)
+
+    vote_buf = deque(maxlen=VOTE_N)  <span class="cm"># [FIX #4] 최근 N개만 유지</span>
+    fps_t = cv2.getTickCount() / cv2.getTickFrequency()
+
+    <span class="kw">while</span> cap.isOpened():
+        ret, frame = cap.read()
+        <span class="kw">if</span> <span class="kw">not</span> ret:
+            <span class="kw">break</span>
+        draw_silhouette(frame, SILHOUETTE)
+
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        boxes, probs = mtcnn.detect(img_pil)
+
+        <span class="kw">if</span> boxes <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span> <span class="kw">and</span> len(boxes) &gt; <span class="nm">0</span>:
+            cx = (boxes[<span class="nm">0</span>][<span class="nm">0</span>] + boxes[<span class="nm">0</span>][<span class="nm">2</span>]) / <span class="nm">2</span>
+            cy = (boxes[<span class="nm">0</span>][<span class="nm">1</span>] + boxes[<span class="nm">0</span>][<span class="nm">3</span>]) / <span class="nm">2</span>
+            <span class="cm"># [FIX] 원본에서 끊겨 있던 in_zone 조건 복원</span>
+            in_zone = (
+                SILHOUETTE[<span class="nm">0</span>] &lt;= cx &lt;= SILHOUETTE[<span class="nm">2</span>]
+                <span class="kw">and</span> SILHOUETTE[<span class="nm">1</span>] &lt;= cy &lt;= SILHOUETTE[<span class="nm">3</span>]
+            )
+            <span class="kw">if</span> in_zone:
+                face_t = mtcnn(img_pil)
+                <span class="kw">if</span> face_t <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+                    inp = ((face_t - <span class="nm">127.5</span>) / <span class="nm">128.0</span>).unsqueeze(<span class="nm">0</span>).to(device)
+                    <span class="kw">if</span> use_fp16:
+                        inp = inp.half()
+                    <span class="kw">with</span> torch.no_grad():
+                        emb = backbone(inp)  <span class="cm"># (1, 512)</span>
+                        emb = torch.nn.functional.normalize(emb, p=<span class="nm">2</span>, dim=<span class="nm">1</span>)
+                        <span class="cm"># [FIX #7] 비교는 FP32 로 (등록 임베딩과 정밀도 일치)</span>
+                        emb = emb.squeeze(<span class="nm">0</span>).float().cpu()
+
+                    emp_id, emp_name, sim = find_best_match(
+                        emb, db_embeddings, threshold=SIM_THR
+                    )
+
+                    <span class="kw">if</span> emp_id <span class="kw">is</span> <span class="kw">not</span> <span class="kw">None</span>:
+                        <span class="cm"># [FIX #4] 직전과 다른 사람이면 버퍼 초기화 후 새로 시작</span>
+                        <span class="kw">if</span> vote_buf <span class="kw">and</span> vote_buf[-<span class="nm">1</span>] != emp_id:
+                            vote_buf.clear()
+                        vote_buf.append(emp_id)
+
+                        <span class="cm"># 최근 VOTE_N개가 모두 동일인일 때만 확정</span>
+                        <span class="kw">if</span> (
+                            len(vote_buf) == VOTE_N
+                            <span class="kw">and</span> len(set(vote_buf)) == <span class="nm">1</span>
+                        ):
+                            final_id = vote_buf[<span class="nm">0</span>]
+                            final_name = db_embeddings[final_id][<span class="str">&quot;name&quot;</span>]
+                            actions = db.get_available_actions(final_id)
+                            <span class="kw">if</span> actions:
+                                show_action_popup(
+                                    frame, final_name, actions, db, final_id
+                                )
+                            <span class="kw">else</span>:
+                                print(<span class="str">f&quot;{final_name}: 당일 퇴근 완료 — 추가 액션 없음&quot;</span>)
+                            vote_buf.clear()
+                    <span class="kw">else</span>:
+                        vote_buf.clear()  <span class="cm"># 임계값 미달 시 버퍼 초기화</span>
+
+        now = cv2.getTickCount() / cv2.getTickFrequency()
+        fps = <span class="nm">1.0</span> / (now - fps_t + <span class="nm">1</span>e-<span class="nm">9</span>)
+        fps_t = now
+        draw_hud(frame, fps)
+
+        cv2.imshow(<span class="str">&quot;출퇴근 시스템 (q: 종료)&quot;</span>, frame)
+        <span class="kw">if</span> cv2.waitKey(<span class="nm">1</span>) &amp; <span class="nm">0</span>xFF == ord(<span class="str">&quot;q&quot;</span>):
+            <span class="kw">break</span>
+
+    cap.release()
+    db.close()
+    cv2.destroyAllWindows()
+
+
+<span class="kw">if</span> __name__ == <span class="str">&quot;__main__&quot;</span>:
+    main()</pre></div>
+          </div>
+        </div>
+
+        <div id="content7-camera" class="tab-content">
+          <div class="code-wrap" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0; border-top:none; border-color:#d0d5e0;">
+            <div class="code-header">
+              <div class="code-filename"><span>utils/camera.py</span> · OpenCV UI 헬퍼</div>
+              <button class="code-copy" onclick="copyCode(this)">copy</button>
+            </div>
+            <div class="code-body"><pre><span class="str">&quot;&quot;</span><span class="str">&quot;</span>OpenCV UI 헬퍼 — 실루엣 가이드, HUD, 인식 완료 팝업.
+
+[FIX <span class="cm">#5] show_action_popup 의 무한 대기(cv2.waitKey(0))를 타임아웃으로 교체.</span>
+         사용자가 키를 누르지 않아도 timeout_ms 후 자동 취소되어
+         메인 영상 루프가 얼어붙지 않는다.
+<span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+<span class="kw">import</span> cv2
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">from</span> .database <span class="kw">import</span> AttendanceDB
+
+FONT = cv2.FONT_HERSHEY_SIMPLEX
+
+
+<span class="kw">def</span> <span class="fn">draw_silhouette</span>(frame: np.ndarray, rect: tuple):
+    <span class="str">&quot;&quot;&quot;화면 중앙 실루엣 사각형 + 가이드 텍스트 렌더링.&quot;&quot;&quot;</span>
+    x1, y1, x2, y2 = rect
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (<span class="nm">0</span>, <span class="nm">0</span>), (frame.shape[<span class="nm">1</span>], frame.shape[<span class="nm">0</span>]), (<span class="nm">0</span>, <span class="nm">0</span>, <span class="nm">0</span>), -<span class="nm">1</span>)
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (<span class="nm">255</span>, <span class="nm">255</span>, <span class="nm">255</span>), -<span class="nm">1</span>)  <span class="cm"># 실루엣 마스크</span>
+    cv2.addWeighted(overlay, <span class="nm">0.15</span>, frame, <span class="nm">0.85</span>, <span class="nm">0</span>, frame)  <span class="cm"># 반투명 합성</span>
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (<span class="nm">100</span>, <span class="nm">210</span>, <span class="nm">255</span>), <span class="nm">2</span>)
+    cv2.putText(
+        frame, <span class="str">&quot;Align your face&quot;</span>, (x1, y1 - <span class="nm">10</span>), FONT, <span class="nm">0.55</span>, (<span class="nm">100</span>, <span class="nm">210</span>, <span class="nm">255</span>), <span class="nm">1</span>
+    )
+
+
+<span class="kw">def</span> <span class="fn">draw_hud</span>(frame: np.ndarray, fps: float):
+    <span class="str">&quot;&quot;&quot;FPS + 현재 시각 HUD 오버레이.&quot;&quot;&quot;</span>
+    <span class="kw">from</span> datetime <span class="kw">import</span> datetime
+
+    ts = datetime.now().strftime(<span class="str">&quot;%Y-%m-%d %H:%M:%S&quot;</span>)
+    cv2.putText(frame, <span class="str">f&quot;FPS: {fps:.1f}&quot;</span>, (<span class="nm">10</span>, <span class="nm">30</span>), FONT, <span class="nm">0.65</span>, (<span class="nm">0</span>, <span class="nm">255</span>, <span class="nm">0</span>), <span class="nm">2</span>)
+    cv2.putText(frame, ts, (<span class="nm">10</span>, <span class="nm">55</span>), FONT, <span class="nm">0.55</span>, (<span class="nm">200</span>, <span class="nm">200</span>, <span class="nm">200</span>), <span class="nm">1</span>)
+
+
+<span class="kw">def</span> <span class="fn">show_action_popup</span>(
+    frame: np.ndarray,
+    emp_name: str,
+    actions: list,
+    db: AttendanceDB,
+    emp_id: str,
+    timeout_ms: int = <span class="nm">5000</span>,
+):
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>인식 완료 팝업: 이름 표시 + 가능한 액션 키 매핑.
+
+    키 바인딩: <span class="nm">1</span>=출근 / <span class="nm">2</span>=외출 / <span class="nm">3</span>=복귀 / <span class="nm">4</span>=퇴근 / ESC=취소
+    [FIX <span class="cm">#5] timeout_ms 동안 입력이 없으면 자동 취소(루프 정지 방지).</span>
+    <span class="str">&quot;&quot;</span><span class="str">&quot;</span>
+    key_map = {ord(<span class="str">&quot;1&quot;</span>): <span class="str">&quot;출근&quot;</span>, ord(<span class="str">&quot;2&quot;</span>): <span class="str">&quot;외출&quot;</span>, ord(<span class="str">&quot;3&quot;</span>): <span class="str">&quot;복귀&quot;</span>, ord(<span class="str">&quot;4&quot;</span>): <span class="str">&quot;퇴근&quot;</span>}
+    label_to_key = {v: k <span class="kw">for</span> k, v <span class="kw">in</span> key_map.items()}
+
+    popup = frame.copy()
+    cv2.rectangle(popup, (<span class="nm">120</span>, <span class="nm">150</span>), (<span class="nm">520</span>, <span class="nm">340</span>), (<span class="nm">30</span>, <span class="nm">30</span>, <span class="nm">30</span>), -<span class="nm">1</span>)
+    cv2.rectangle(popup, (<span class="nm">120</span>, <span class="nm">150</span>), (<span class="nm">520</span>, <span class="nm">340</span>), (<span class="nm">100</span>, <span class="nm">210</span>, <span class="nm">255</span>), <span class="nm">2</span>)
+    cv2.putText(
+        popup, <span class="str">f&quot;Recognized: {emp_name}&quot;</span>, (<span class="nm">145</span>, <span class="nm">190</span>), FONT, <span class="nm">0.75</span>, (<span class="nm">255</span>, <span class="nm">255</span>, <span class="nm">255</span>), <span class="nm">2</span>
+    )
+    <span class="kw">for</span> i, act <span class="kw">in</span> enumerate(actions):
+        key_char = chr(label_to_key.get(act, <span class="nm">63</span>))  <span class="cm"># 63 = &#x27;?&#x27;</span>
+        cv2.putText(
+            popup,
+            <span class="str">f&quot;[{key_char}] {act}&quot;</span>,
+            (<span class="nm">145</span>, <span class="nm">230</span> + i * <span class="nm">36</span>),
+            FONT,
+            <span class="nm">0.65</span>,
+            (<span class="nm">100</span>, <span class="nm">220</span>, <span class="nm">140</span>),
+            <span class="nm">2</span>,
+        )
+    cv2.putText(popup, <span class="str">&quot;[ESC] Cancel&quot;</span>, (<span class="nm">145</span>, <span class="nm">310</span>), FONT, <span class="nm">0.55</span>, (<span class="nm">180</span>, <span class="nm">180</span>, <span class="nm">180</span>), <span class="nm">1</span>)
+    cv2.imshow(<span class="str">&quot;출퇴근 시스템 (q: 종료)&quot;</span>, popup)
+
+    <span class="cm"># [FIX #5] 무한 대기 대신 타임아웃. waitKey 는 ms 단위, 0 이하면 무한이므로 보정.</span>
+    key = cv2.waitKey(max(<span class="nm">1</span>, timeout_ms)) &amp; <span class="nm">0</span>xFF
+    <span class="kw">if</span> key <span class="kw">in</span> key_map <span class="kw">and</span> key_map[key] <span class="kw">in</span> actions:
+        db.log_action(emp_id, key_map[key])
+        print(<span class="str">f&quot;{emp_name}: {key_map[key]} 완료&quot;</span>)
+    <span class="cm"># ESC(27) 또는 타임아웃/무효 키 → 아무 동작 없이 복귀</span></pre></div>
+          </div>
+        </div>
+
+        <div class="callout warn" style="margin-top:12px">
+          <div class="callout-icon">⚠</div>
+          <div><strong>FP16 사용 시 주의 [수정 #7]:</strong> <code>backbone.half()</code> 적용 후 입력 텐서도 <code>.half()</code>로 변환해야 합니다. 단, <strong>등록 임베딩은 FP32로 저장</strong>되므로 추론 임베딩도 비교 직전 <code>.float()</code>로 되돌려 정밀도를 일치시킵니다(threshold 근처 오인식 방지). CPU에서는 FP16 미지원이므로 <code>USE_FP16 and device.type == 'cuda'</code> 조건부로 처리합니다. 정밀도 불일치가 우려되면 <code>USE_FP16=False</code>로 두면 등록과 완전히 동일해집니다. FPS가 여전히 부족하면 MTCNN 검출 주기를 3프레임마다 1회로 줄이는 것도 고려하세요.</div>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ─── Section 8 ─── -->
+      <section class="section" id="s8">
+        <div class="section-header">
+          <div class="section-num">08</div>
+          <div class="section-info">
+            <div class="section-title">프로젝트 구조 & 개발 체크리스트</div>
+            <div class="section-desc">최종 디렉토리 레이아웃 및 단계별 진행 체크</div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title"><div class="dot g"></div> 최종 디렉토리 구조</div>
+            <div class="dir-tree">
+<span class="d">project/</span>
+├── <span class="d">data/</span>
+│   ├── <span class="d">raw/</span>                 <span class="cm"># 추출 .pt 텐서 ({emp_id}/ 하위)</span>
+│   ├── <span class="d">frames/</span>
+│   ├── <span class="d">splits/</span>
+│   │   ├── <span class="d">train/</span>           <span class="cm"># {emp_id}/ 하위 폴더</span>
+│   │   ├── <span class="d">val/</span>
+│   │   └── <span class="d">test/</span>
+│   └── <span class="hi">label_map.json</span>       <span class="cm"># ← 학습 시 자동 생성 (인덱스↔emp_id)</span>
+├── <span class="d">models/</span>
+│   ├── <span class="f">classifier.py</span>        <span class="cm"># 학습용 분류기</span>
+│   └── <span class="f">*_best.pth</span>           <span class="cm"># 실험별 체크포인트</span>
+├── <span class="d">runs/</span>                    <span class="cm"># TensorBoard 로그</span>
+├── <span class="d">utils/</span>
+│   ├── <span class="f">__init__.py</span>          <span class="cm"># .env 로드 + DB_PATH 전역</span>
+│   ├── <span class="f">data_collector.py</span>    <span class="cm"># 동영상→프레임 수집</span>
+│   ├── <span class="f">split_dataset.py</span>     <span class="cm"># 70/15/15 분할</span>
+│   ├── <span class="f">registry.py</span>          <span class="cm"># 임베딩 DB + label_map + 매칭</span>
+│   ├── <span class="f">dataset.py</span>           <span class="cm"># PyTorch Dataset</span>
+│   ├── <span class="f">database.py</span>          <span class="cm"># SQLite 상태 머신</span>
+│   └── <span class="f">camera.py</span>            <span class="cm"># OpenCV UI 헬퍼</span>
+├── <span class="d">tests/</span>
+│   └── <span class="f">test_state_machine.py</span> <span class="cm"># 상태 전이 6케이스</span>
+├── <span class="hi">train.py</span>
+├── <span class="hi">evaluate.py</span>              <span class="cm"># F1 / Confusion Matrix / FPS</span>
+├── <span class="hi">main.py</span>                  <span class="cm"># 실시간 추론 진입점</span>
+├── <span class="f">init_db.sql</span>
+├── <span class="f">requirements.txt</span>
+├── <span class="f">.env.example</span>            <span class="cm"># NAS_DB_PATH 주입</span>
+└── <span class="f">README.md</span></div>
+          </div>
+
+          <div>
+            <div class="card">
+              <div class="card-title"><div class="dot y"></div> 개발 단계별 체크리스트</div>
+              <ul class="checklist" id="checklist">
+                <li onclick="toggleCheck(this)"><div class="ck">✓</div><div class="ck-text">환경 설정 및 requirements 설치</div><span class="phase-tag badge-b badge" style="font-size:10px">Setup</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">data_collector.py로 직원 30명 동영상 수집 (인당 ≥50프레임)</div><span class="phase-tag badge-g badge" style="font-size:10px">Data</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">split_dataset.py 실행 → 70/15/15 분할 완료</div><span class="phase-tag badge-g badge" style="font-size:10px">Data</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">AttendanceDB() 실행 → attendance.db 스키마 자동 생성 확인</div><span class="phase-tag badge-g badge" style="font-size:10px">Data</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">capture_embedding()으로 30명 임베딩 등록 (DB BLOB 저장)</div><span class="phase-tag badge-g badge" style="font-size:10px">Data</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">EXP-1~6 순차 실험 실행 (runs/ TensorBoard 기록)</div><span class="phase-tag badge-y badge" style="font-size:10px">Train</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">tensorboard --logdir runs/ 로 실험 비교 및 최적 조합 선택</div><span class="phase-tag badge-y badge" style="font-size:10px">Train</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">evaluate.py 실행 → threshold 튜닝 + FPS ≥15 확인</div><span class="phase-tag badge-y badge" style="font-size:10px">Train</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">AttendanceDB 상태 머신 unit test (5가지 전이 케이스 검증)</div><span class="phase-tag badge-r badge" style="font-size:10px">System</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">main.py 실시간 루프 통합 테스트 (NAS 연결 포함)</div><span class="phase-tag badge-r badge" style="font-size:10px">System</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">신규 직원 추가 테스트 — capture_embedding() 후 재시작만으로 인식 확인</div><span class="phase-tag badge-r badge" style="font-size:10px">System</span></li>
+                <li onclick="toggleCheck(this)"><div class="ck"></div><div class="ck-text">README.md 문서화 및 GitHub push</div><span class="phase-tag badge-b badge" style="font-size:10px">Done</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout ok" style="margin-top: 4px;">
+          <div class="callout-icon">✓</div>
+          <div><strong>이번 업데이트 반영 사항 (버그 수정):</strong> <strong>#1</strong> <code>split_dataset.py</code>의 <code>if len(frames) 10:</code> 구문 오류 → <code>&lt; min_frames</code> 수정. <strong>#2</strong> 증강을 정규화 이전 <code>[0,1]</code> 범위에서 적용. <strong>#4</strong> <code>main.py</code> 투표 버퍼를 <code>deque(maxlen)</code>로 바꾸고 인물 변경 시 초기화 — 서로 다른 사람 혼입 방지. <strong>#5</strong> 팝업 <code>waitKey(0)</code> 무한 대기 → 타임아웃(5초). <strong>#6</strong> <code>find_best_match</code> 초기값 <code>0.0 → -1.0</code>. <strong>#7</strong> 등록·추론 임베딩 FP32 비교로 일치. 그 외 끊겨 있던 <code>while</code>/<code>INSERT</code>/<code>in_zone</code> 구문 복원, <code>build/load_label_map</code> 추가, 미사용 <code>torchaudio</code> 제거 및 <code>python-dotenv</code> 추가, 상태 머신 단위 테스트(<code>tests/</code>) 포함.</div>
+        </div>
+      </section>
+
+    </div><!-- /content -->
+  </main>
+</div>
+
+<script>
+/* Tab switch */
+function switchTab(barId, contentPrefix, key) {
+  document.querySelectorAll('#' + barId + ' .tab').forEach(t => t.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  const prefix = contentPrefix + '-';
+  document.querySelectorAll('[id^="' + prefix + '"]').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById(prefix + key);
+  if (target) target.classList.add('active');
+}
+
+/* Copy code */
+function copyCode(btn) {
+  const pre = btn.closest('.code-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'copied!';
+    setTimeout(() => btn.textContent = 'copy', 1500);
+  });
+}
+
+/* Checklist toggle */
+function toggleCheck(li) {
+  li.classList.toggle('done');
+  const ck = li.querySelector('.ck');
+  ck.textContent = li.classList.contains('done') ? '✓' : '';
+}
+
+/* Sidebar active state on scroll */
+const sections = document.querySelectorAll('section[id]');
+const navItems = document.querySelectorAll('.nav-item');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navItems.forEach(n => {
+        n.classList.toggle('active', n.getAttribute('href') === '#' + e.target.id);
+      });
+    }
+  });
+}, { threshold: 0.25, rootMargin: '-60px 0px -60% 0px' });
+sections.forEach(s => observer.observe(s));
+
+/* Close sidebar on mobile nav click */
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelector('.sidebar').classList.remove('open');
+  });
+});
+</script>
+</body>
+</html>

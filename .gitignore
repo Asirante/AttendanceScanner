@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 데이터 / 모델 / 로그 (대용량)
+data/raw/*
+data/frames/*
+data/splits/train/*
+data/splits/val/*
+data/splits/test/*
+runs/*
+
+!data/raw/.gitkeep
+!data/frames/.gitkeep
+!data/splits/train/.gitkeep
+!data/splits/val/.gitkeep
+!data/splits/test/.gitkeep
+!models/.gitkeep
+!runs/.gitkeep
+
+models/*.pth
+
+data/lfw-deepfunneled/
+data/lfw/
+*.tgz
+
+# 환경 변수 / DB
+.env
+*.db
+
+# OS
+.DS_Store
+
+# GUI 앱 런타임 설정
+config.json
+dist/
+build/
+*.spec.bak

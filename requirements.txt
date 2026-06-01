@@ -1,0 +1,28 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+
+# --- Core models ---
+torch==2.2.0
+torchvision==0.17.0
+facenet-pytorch==2.5.3   # MTCNN + InceptionResnetV1
+
+# --- Computer vision ---
+opencv-python-headless==4.9.0.80
+Pillow==10.2.0
+
+# --- Data & utils ---
+numpy==1.26.4
+scikit-learn==1.4.0      # train_test_split, classification_report
+tqdm==4.66.2
+python-dotenv==1.0.1     # load NAS_DB_PATH from .env
+
+# --- Training / monitoring ---
+tensorboard==2.16.2
+
+# --- GUI / output / build ---
+PyQt5==5.15.10           # desktop GUI
+openpyxl==3.1.2          # export attendance logs to Excel
+pyinstaller==6.5.0       # build exe (install when packaging)
+
+# --- Text-to-speech (voice announce, Windows SAPI5) ---
+pyttsx3==2.90            # offline TTS engine
+pywin32==306             # required by pyttsx3 sapi5 driver on Windows

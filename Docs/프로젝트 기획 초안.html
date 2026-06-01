@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 실시간 안면인식 출퇴근 시스템 프로젝트</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', 'Inter', sans-serif; line-height: 1.6; background-color: #f8fafc; }
+        .section-title { border-left: 5px solid #3b82f6; padding-left: 14px; margin-bottom: 20px; font-weight: 700; color: #0f172a; }
+        .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 24px; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; margin-right: 8px; }
+        .badge-blue { background-color: #eff6ff; color: #1d4ed8; }
+        .badge-gray { background-color: #f1f5f9; color: #475569; }
+        .badge-emerald { background-color: #d1fae5; color: #047857; }
+    </style>
+</head>
+<body class="text-slate-800 p-4 md:p-10">
+
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <header class="mb-10 text-center md:text-left">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900 mb-3 tracking-tight">AI 기반 실시간 안면인식 출퇴근 시스템</h1>
+            <p class="text-lg text-slate-600">PyTorch Metric Learning 및 벡터 유사도 매칭을 활용한 Zero-Retraining 근태 관리 솔루션</p>
+        </header>
+
+        <!-- 1. 문제 정의 -->
+        <div class="card">
+            <h2 class="section-title text-xl">1. 문제 정의 및 기대 효과</h2>
+            <div>
+                <h3 class="font-bold text-slate-800 mb-2 flex items-center"><span class="mr-2">🎯</span>프로젝트 목표</h3>
+                <p class="text-sm text-slate-600 mb-4">약 30명 규모의 중소 사업장을 위한 실시간 안면인식 출퇴근 시스템 구축. 기존 <strong>QR코드 태그 방식</strong>의 번거로움과 대리 출결 문제를 해결하고, 95% 이상의 인식 정확도를 달성함.</p>
+                
+                <h3 class="font-bold text-slate-800 mb-2 flex items-center"><span class="mr-2">🚀</span>기대 효과 (Scalability)</h3>
+                <ul class="text-sm text-slate-600 list-disc ml-5 space-y-1">
+                    <li><span class="badge badge-emerald">Agile Development</span> <strong>소규모 파일럿 테스트 지원:</strong> 3~4명 규모로 초기 모델 검증 및 시스템 로직(상태머신) 테스트를 완벽히 수행 가능.</li>
+                    <li><span class="badge badge-blue">Zero-Retraining</span> <strong>유연한 확장성:</strong> 파일럿 테스트 완료 후, 모델의 코드 수정이나 재학습 없이 단순 DB 등록만으로 즉시 30명(혹은 그 이상) 규모의 실무 환경에 배포 가능.</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 2. 데이터 셋 설명 -->
+        <div class="card">
+            <h2 class="section-title text-xl">2. 데이터 셋 설명</h2>
+            <div class="bg-slate-50 rounded-lg p-5 border border-slate-200">
+                <h3 class="font-semibold text-blue-700 mb-3">동영상 기반 얼굴 프레임 데이터 (직원 30명)</h3>
+                <p class="text-sm text-slate-600 mb-4">직원당 약 5~10초의 얼굴 회전 동영상을 촬영 후, 아래 파이프라인을 거쳐 데이터를 구축합니다.</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div class="bg-white p-3 rounded shadow-sm border border-slate-100">
+                        <span class="font-bold text-slate-800 block mb-1">등록 (Enrollment)</span>
+                        <p class="text-xs text-slate-500">동영상에서 샘플링된 50여 장의 프레임으로 기준이 되는 벡터(Prototype)를 생성하여 DB에 저장.</p>
+                    </div>
+                    <div class="bg-white p-3 rounded shadow-sm border border-slate-100">
+                        <span class="font-bold text-slate-800 block mb-1">임계값 최적화 (Validation)</span>
+                        <p class="text-xs text-slate-500">등록자 본인/타인의 영상 교차 검증을 통해 최적의 거리 임계값(Threshold) 산출.</p>
+                    </div>
+                    <div class="bg-white p-3 rounded shadow-sm border border-slate-100">
+                        <span class="font-bold text-slate-800 block mb-1">테스트 (Test)</span>
+                        <p class="text-xs text-slate-500">학습/등록에 관여하지 않은 새로운 환경(조명/각도)의 데이터를 통한 최종 성능 평가.</p>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-slate-600 border-t border-slate-200 pt-3">
+                    <strong>데이터 전처리:</strong> 
+                    <span class="badge badge-gray mt-2">Frame Skipping (프레임 샘플링)</span>
+                    <span class="badge badge-gray mt-2">MTCNN Confidence Filtering (흔들림 제거)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 사용 모델 설명 (아키텍처) -->
+        <div class="card border-blue-200 shadow-md">
+            <h2 class="section-title text-xl text-blue-800">3. 시스템 아키텍처 (Metric Learning 기반)</h2>
+            <div class="mb-4 text-sm text-slate-600">
+                인원이 변동될 때마다 모델을 재학습(Retraining)해야 하는 기존 분류 모델의 한계를 극복하기 위해, 얼굴 특징을 512차원 공간에 매핑하는 <strong>Metric Learning(거리 기반 학습) 방식</strong>을 채택합니다. 
+                <br/><span class="text-blue-600 font-semibold">※ 이 구조 덕분에 3명으로 프로토타입을 완성한 뒤, 30명 환경에 그대로 적용할 수 있습니다.</span>
+            </div>
+            
+            <!-- 모델 구조 시각화 -->
+            <div class="flex flex-col md:flex-row items-center justify-between bg-slate-800 text-white p-6 rounded-xl font-mono text-sm shadow-inner">
+                <div class="text-center p-3">
+                    <div class="font-bold text-blue-300">Input Image</div>
+                    <div class="text-xs text-slate-400 mt-1">Webcam Frame</div>
+                </div>
+                <div class="hidden md:block">→</div>
+                <div class="text-center p-3 border border-slate-600 rounded-lg bg-slate-700">
+                    <div class="font-bold text-emerald-400">MTCNN</div>
+                    <div class="text-xs text-slate-300 mt-1">Face Detection</div>
+                </div>
+                <div class="hidden md:block">→</div>
+                <div class="text-center p-3 border border-slate-600 rounded-lg bg-slate-700">
+                    <div class="font-bold text-amber-400">InceptionResnetV1</div>
+                    <div class="text-xs text-slate-300 mt-1">512-dim Embedding</div>
+                </div>
+                <div class="hidden md:block">→</div>
+                <div class="text-center p-3 border-2 border-blue-500 rounded-lg bg-slate-800 relative shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                    <div class="font-bold text-blue-400">PyTorch Cosine Sim</div>
+                    <div class="text-xs text-slate-300 mt-1">DB 벡터와 거리 연산<br/><span class="text-pink-400">※ 무한한 확장성 지원</span></div>
+                    <div class="absolute -top-3 -right-3 text-2xl">⚡</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 성능 비교 방법 -->
+        <div class="card">
+            <h2 class="section-title text-xl">4. 성능 비교 방법 (실험 계획 세분화)</h2>
+            
+            <div class="space-y-4">
+                <!-- 4.1. 거리 측정 수식 비교 -->
+                <div class="bg-slate-50 border border-slate-200 rounded p-4">
+                    <h3 class="font-bold text-slate-800 mb-2 flex items-center">🧪 4-1. 텐서 거리(유사도) 측정 방식 비교</h3>
+                    <ul class="text-sm text-slate-600 space-y-2 list-disc ml-4">
+                        <li><strong>Cosine Similarity:</strong> 벡터의 크기(조명 밝기 등)에 무관하게 방향성(얼굴 특징)만으로 유사도를 판별하는 PyTorch <code>F.cosine_similarity()</code> 연산 평가.</li>
+                        <li><strong>Euclidean Distance (L2 Norm):</strong> 512차원 공간 상의 물리적 거리를 계산하여 비교. Cosine 방식 대비 조명 변화 강건성(Robustness) 분석.</li>
+                    </ul>
+                </div>
+
+                <!-- 4.2. 기준 벡터(Prototype) 생성 방법 비교 -->
+                <div class="bg-slate-50 border border-slate-200 rounded p-4">
+                    <h3 class="font-bold text-slate-800 mb-2 flex items-center">📊 4-2. 기준 벡터(Prototype) 텐서 생성 전략</h3>
+                    <ul class="text-sm text-slate-600 space-y-2 list-disc ml-4">
+                        <li><strong>단일 이미지 저장:</strong> 각 직원당 사진 1장의 512차원 텐서만을 저장할 때의 인식률.</li>
+                        <li><strong>다중 프레임 평균 (Mean Tensor):</strong> 동영상에서 추출한 50개 프레임의 텐서를 PyTorch의 <code>torch.mean()</code> 연산을 통해 하나의 정교한 기준 텐서로 압축하여 등록할 때의 성능 향상률 비교.</li>
+                    </ul>
+                </div>
+
+                <!-- 4.3. 임계값 분석 -->
+                <div class="bg-slate-50 border border-slate-200 rounded p-4">
+                    <h3 class="font-bold text-slate-800 mb-2 flex items-center">⚙️ 4-3. 최적 임계값(Threshold) 도출 분석</h3>
+                    <ul class="text-sm text-slate-600 space-y-2 list-disc ml-4">
+                        <li><strong>FAR vs FRR Trade-off:</strong> 타인을 본인으로 오인할 확률(FAR)과 본인을 인식하지 못할 확률(FRR)이 교차하는 지점(EER)을 분석하여 최적의 Cosine Similarity Threshold(예: 0.85) 도출 실험.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 5. 성능 측정 기준 -->
+        <div class="card">
+            <h2 class="section-title text-xl">5. 성능 측정 기준</h2>
+            <ul class="text-sm text-slate-600 space-y-3 list-disc ml-4">
+                <li><strong>Accuracy (정확도):</strong> 최종 목표 95% 이상. (파일럿 인원 및 최종 30명 대상 교차 검증)</li>
+                <li><strong>False Acceptance Rate (오인식률):</strong> 보안과 직결되므로 등록되지 않은 외부인 사진을 0% 확률로 통과시키는지 여부(Threshold 검증).</li>
+                <li><strong>Inference Time (추론 시간):</strong> 모델의 텐서 추출 및 SQLite 순회 속도를 측정하여 1 프레임당 인식 속도(목표치: 100ms 이내) 검증.</li>
+            </ul>
+        </div>
+
+        <!-- 6. 시스템 구현 로직 (상태머신 & UI) -->
+        <div class="card border-blue-200 shadow-md">
+            <h2 class="section-title text-xl text-blue-800 border-blue-500">6. UI 프로세스 및 출퇴근 상태 머신 로직</h2>
+            
+            <div class="space-y-6">
+                <!-- UI -->
+                <div>
+                    <h3 class="font-semibold text-slate-800 mb-2">📸 OpenCV 인터페이스</h3>
+                    <p class="text-sm text-slate-600 mb-2">화면 중앙에 <strong>사람 테두리(실루엣) 오버레이</strong>를 띄웁니다. 사용자가 실루엣에 얼굴을 맞추면 Bounding Box 좌표를 검사하여 일정 영역 내에 들어왔을 때만 안면 인식을 트리거(Trigger)하여 연산 낭비를 막습니다.</p>
+                </div>
+                <!-- DB & 로직 -->
+                <div>
+                    <h3 class="font-semibold text-slate-800 mb-2">🗄️ NAS 연동 SQLite 상태 머신 및 스키마</h3>
+                    <p class="text-sm text-slate-600 mb-4">직원 신규 등록 시 모델 재학습 없이 <code>Employees</code> 테이블에 임베딩 벡터(BLOB)만 추가하며, 인식 시 DB와 유사도 연산을 진행합니다.</p>
+                    
+                    <div class="bg-slate-50 border border-slate-200 rounded p-4 mb-4">
+                        <h4 class="text-xs font-bold text-slate-700 mb-2">📌 SQLite 간이 스키마 (Schema)</h4>
+                        <pre class="text-xs font-mono text-blue-800 bg-white p-3 rounded border border-slate-100 overflow-x-auto">
+CREATE TABLE Employees (
+    emp_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    embedding BLOB NOT NULL -- PyTorch Tensor의 Numpy bytes 저장
+);
+
+CREATE TABLE AttendanceLog (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    emp_id TEXT,
+    date TEXT,       -- YYYY-MM-DD
+    time TEXT,       -- HH:MM:SS
+    state TEXT       -- '출근', '퇴근', '외출', '복귀'
+);</pre>
+                    </div>
+
+                    <div class="bg-slate-100 p-4 rounded text-sm text-slate-700 font-mono space-y-2">
+                        <div class="text-slate-500 text-xs mb-2">// 당일(date) AttendanceLog 조회 결과에 따른 UI 분기</div>
+                        <div>당일 기록 없음 → <span class="text-blue-600 font-bold">[출근]</span> 활성화</div>
+                        <div>최근 상태 '출근' → <span class="text-orange-600 font-bold">[외출]</span> / <span class="text-orange-600 font-bold">[퇴근]</span> 활성화</div>
+                        <div>최근 상태 '외출' → <span class="text-green-600 font-bold">[복귀]</span> 활성화</div>
+                        <div>최근 상태 '복귀' → <span class="text-orange-600 font-bold">[외출]</span> / <span class="text-orange-600 font-bold">[퇴근]</span> 활성화</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. Code 구조 & 기타 -->
+        <div class="card bg-slate-900 text-slate-300 border-none">
+            <h2 class="section-title text-xl text-white border-blue-400">7. 프로젝트 형상 관리</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                <div>
+                    <h3 class="font-bold text-white mb-2">📁 Code 구조 (예상)</h3>
+                    <pre class="bg-slate-800 p-3 rounded font-mono text-xs text-emerald-400 border border-slate-700">
+project/
+├── data/           # 얼굴 등록용 파일럿 테스트 영상
+├── utils/
+│   ├── database.py # SQLite DB 연결 및 Tensor BLOB 입출력
+│   ├── camera.py   # OpenCV 실루엣 캡처 및 전처리
+│   └── metrics.py  # PyTorch 유사도(Distance) 연산 모듈
+├── register.py     # 신규 직원 등록 스크립트 (Zero-Retraining)
+└── main.py         # 실시간 출퇴근 구동 메인 (상태머신)</pre>
+                </div>
+                <div>
+                    <h3 class="font-bold text-white mb-2">🔗 Git Hub 및 버전 관리</h3>
+                    <ul class="list-disc ml-5 space-y-2">
+                        <li><strong>GitHub Repo:</strong> 코드 버전 관리 및 Readme.md를 통한 프로젝트 아키텍처 문서화 수행.</li>
+                        <li><strong>모듈화:</strong> UI(OpenCV), DB 연동, AI 연산(PyTorch)을 분리하여 유지보수가 쉽도록 설계.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
