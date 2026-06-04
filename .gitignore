@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.venv_cpu/
 
 # 데이터 / 모델 / 로그 (대용량)
 data/raw/*
