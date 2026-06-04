@@ -17,6 +17,7 @@ python-dotenv==1.0.1     # load NAS_DB_PATH from .env
 
 # --- Training / monitoring ---
 tensorboard==2.16.2
+matplotlib==3.8.3       # t-SNE/ROC/confusion plots (analysis only)
 
 # --- GUI / output / build ---
 PyQt5==5.15.10           # desktop GUI
