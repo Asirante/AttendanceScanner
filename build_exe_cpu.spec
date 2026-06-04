@@ -3,7 +3,7 @@
 
 Build inside a CPU-only venv (torch installed from the cpu index):
     python -m venv .venv_cpu
-    .venv_cpu\\Scripts\\activate
+    .venv_cpu\Scripts\activate
     pip install -r requirements_cpu.txt
     rmdir /s /q build dist
     pyinstaller build_exe_cpu.spec
@@ -22,22 +22,9 @@ from PyInstaller.utils.hooks import (
 # facenet_pytorch: collect code + data.
 hiddenimports = collect_submodules("facenet_pytorch")
 
-# torch: the built-in hook sometimes misses the C extension (torch._C),
-# causing "NameError: name '_C' is not defined" at runtime. Collect torch
-# submodules + DLLs, but DROP heavy unused subpackages (testing, distributed,
-# onnx, quantization, benchmark...) — those add thousands of files and make the
-# build extremely slow without being used by an inference-only app.
-_TORCH_SKIP = (
-    "torch.testing", "torch.distributed", "torch.onnx", "torch.quantization",
-    "torch.ao", "torch.utils.benchmark", "torch.utils.tensorboard",
-    "torch.utils.bottleneck", "torch.utils.data.datapipes", "torch.profiler",
-    "torch.package", "torch._dynamo", "torch._inductor",
-    "torch.utils.viz", "torch.utils.model_dump",
-)
-def _keep(mod):
-    return not any(mod == s or mod.startswith(s + ".") for s in _TORCH_SKIP)
-
-hiddenimports += [m for m in collect_submodules("torch") if _keep(m)]
+# torch: 강제 필터링 제거. 전체 서브모듈 수집
+# (일부 모듈을 강제로 제외할 경우 torch._C 로딩 실패 에러 발생 가능성 방지)
+hiddenimports += collect_submodules("torch")
 hiddenimports += ["torch._C", "torchvision"]
 
 # TTS: pyttsx3 imports its driver dynamically, so list it explicitly.
@@ -96,14 +83,7 @@ cuda_excludes = [
     "nvidia.nccl", "nvidia.nvtx", "triton",
 ]
 
-# Heavy torch subpackages an inference-only app never uses. Excluding them
-# cuts the file count (and build time) dramatically.
-torch_excludes = [
-    "torch.testing", "torch.distributed", "torch.onnx", "torch.quantization",
-    "torch.ao", "torch.utils.benchmark", "torch.utils.tensorboard",
-    "torch.utils.bottleneck", "torch.profiler", "torch.package",
-    "torch._dynamo", "torch._inductor",
-]
+# 수정됨: torch_excludes 변수 및 관련 로직 제거 
 
 block_cipher = None
 
@@ -115,7 +95,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=["rthook_torch_home.py"],
-    excludes=["tensorboard", "matplotlib", "expecttest"] + cuda_excludes + torch_excludes,
+    excludes=["tensorboard", "matplotlib", "expecttest"] + cuda_excludes, # torch_excludes 제거
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
