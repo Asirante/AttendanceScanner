@@ -112,18 +112,27 @@ def open_camera_safe(index: int = 0, timeout: float = 3.0):
     result = {"cap": None, "ok": False}
 
     def _worker():
-        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) if hasattr(cv2, "CAP_DSHOW") \
-            else cv2.VideoCapture(index)
-        if cap is None or not cap.isOpened():
-            if cap is not None:
+        cap = None
+        try:
+            cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) if hasattr(cv2, "CAP_DSHOW") \
+                else cv2.VideoCapture(index)
+            if cap is None or not cap.isOpened():
+                if cap is not None:
+                    cap.release()
+                return
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                result["cap"] = cap
+                result["ok"] = True
+            else:
                 cap.release()
-            return
-        ok, frame = cap.read()
-        if ok and frame is not None:
-            result["cap"] = cap
-            result["ok"] = True
-        else:
-            cap.release()
+        except Exception:
+            # cv2가 내부에서 C++ 예외를 던지는 경우(가상캠 등) 안전하게 무시
+            try:
+                if cap is not None:
+                    cap.release()
+            except Exception:
+                pass
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
@@ -143,16 +152,24 @@ def list_cameras(max_index: int = 5) -> list:
             cap.release()
     return found
 
-def test_camera(index: int = 0):
-    """지정한 카메라를 열어 한 프레임을 읽어 (성공여부, 해상도) 반환."""
-    import cv2
+def test_camera(index: int = 0, timeout: float = 3.0):
+    """지정한 카메라를 timeout 안에 열어 한 프레임을 읽어 (성공여부, 해상도) 반환.
 
-    cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) if hasattr(cv2, "CAP_DSHOW") else cv2.VideoCapture(index)
-    if cap is None or not cap.isOpened():
+    가상캠 등이 멈추거나 C++ 예외를 던져도 안전하게 (False, None) 을 반환한다.
+    """
+    cap = open_camera_safe(index, timeout=timeout)
+    if cap is None:
         return False, None
-    ok, frame = cap.read()
-    cap.release()
-    if not ok or frame is None:
+    try:
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            return False, None
+        h, w = frame.shape[:2]
+        return True, (w, h)
+    except Exception:
         return False, None
-    h, w = frame.shape[:2]
-    return True, (w, h)
+    finally:
+        try:
+            cap.release()
+        except Exception:
+            pass

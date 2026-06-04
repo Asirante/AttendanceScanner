@@ -104,6 +104,34 @@ class CameraScanThread(QtCore.QThread):
             found = []
         self.done.emit(found)
 
+class LoadingDialog(QtWidgets.QDialog):
+    """검색 등 짧은 작업 동안 띄우는 모달 로딩창 (진행 표시줄 포함)."""
+
+    def __init__(self, text="처리 중...", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("")
+        self.setModal(True)
+        # 닫기 버튼·테두리 없는 단순한 창
+        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(28, 24, 28, 24)
+        self.label = QtWidgets.QLabel(text)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        lay.addWidget(self.label)
+        bar = QtWidgets.QProgressBar()
+        bar.setRange(0, 0)  # 불확정(빙글빙글) 모드
+        bar.setTextVisible(False)
+        bar.setFixedHeight(8)
+        lay.addWidget(bar)
+        self.setFixedWidth(260)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if self.parent():
+            pg = self.parent().frameGeometry()
+            self.adjustSize()
+            self.move(pg.center() - self.rect().center())
+
 class RecognizeThread(QtCore.QThread):
     frame_ready = QtCore.pyqtSignal(np.ndarray)
     recognized = QtCore.pyqtSignal(str, str, float)
@@ -691,13 +719,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._start_camera_scan()
 
     def _start_camera_scan(self):
-        """앱 시작 시 백그라운드로 카메라를 검색해 설정 콤보를 채운다."""
-        self.cam_scan_thread = CameraScanThread(5)
-        self.cam_scan_thread.done.connect(self._on_cameras_found)
-        self.cam_scan_thread.start()
+        """앱 시작 직후 로딩창을 띄우고 카메라를 검색해 콤보를 채운다."""
+        # 창이 먼저 그려진 뒤 로딩창이 뜨도록 약간 지연
+        QtCore.QTimer.singleShot(150, lambda: self._run_camera_scan(show_warning_if_none=False))
 
     def _on_cameras_found(self, found):
-        """백그라운드 카메라 검색 결과로 콤보를 갱신 (현재 설정값은 유지)."""
+        """카메라 검색 결과로 콤보를 갱신 (현재 설정값은 유지). 로딩창을 닫는다."""
+        # 로딩창이 떠 있으면 닫기
+        dlg = getattr(self, "_scan_dialog", None)
+        if dlg is not None:
+            dlg.accept()
+            self._scan_dialog = None
         if not hasattr(self, "cam_combo"):
             return
         cur = self.cfg.get("camera_index", 0)
@@ -706,14 +738,49 @@ class MainWindow(QtWidgets.QMainWindow):
         if found:
             for i in found:
                 self.cam_combo.addItem(f"카메라 {i}", i)
-            # 기존 설정값이 목록에 있으면 그걸 선택, 없으면 첫 번째
             idx = found.index(cur) if cur in found else 0
             self.cam_combo.setCurrentIndex(idx)
             self.statusBar().showMessage(f"카메라 {len(found)}개 발견: {found}")
         else:
             self.cam_combo.addItem(f"카메라 {cur}", cur)
-            self.statusBar().showMessage("카메라 자동 검색: 발견된 카메라 없음")
+            self.statusBar().showMessage("카메라 검색: 발견된 카메라 없음")
         self.cam_combo.blockSignals(False)
+
+        manual = getattr(self, "_scan_warn", False)
+        if found:
+            # 선택된 카메라를 한 번 더 테스트해 해상도까지 확인 (수동/자동 공통)
+            from app.face_engine import test_camera
+            sel = self.cam_combo.currentData()
+            ok, res = test_camera(sel, timeout=3.0)
+            if ok:
+                self.statusBar().showMessage(
+                    f"카메라 {found} 발견 · 카메라 {sel} 정상 ({res[0]}x{res[1]})"
+                )
+                if manual:
+                    QtWidgets.QMessageBox.information(
+                        self, "카메라 검색 완료",
+                        f"사용 가능한 카메라 {len(found)}개: {found}\n\n"
+                        f"선택된 카메라 {sel} 정상 동작 (해상도 {res[0]} x {res[1]}).",
+                    )
+            else:
+                self.statusBar().showMessage(
+                    f"카메라 {found} 발견 · 카메라 {sel} 테스트 실패 — 다른 카메라를 선택하세요"
+                )
+                if manual:
+                    QtWidgets.QMessageBox.warning(
+                        self, "카메라 검색 완료",
+                        f"카메라 {found} 를 찾았으나, 선택된 카메라 {sel} 테스트에 실패했습니다.\n"
+                        "목록에서 다른 카메라를 선택해 보세요.",
+                    )
+        else:
+            self.statusBar().showMessage("카메라 검색: 발견된 카메라 없음")
+            if manual:
+                QtWidgets.QMessageBox.warning(
+                    self, "카메라 검색",
+                    "사용 가능한 카메라를 찾지 못했습니다.\n"
+                    "카메라 연결 상태를 확인하거나, 다른 앱이 사용 중인지 확인하세요.",
+                )
+        self._scan_warn = False
 
     def _open_db(self):
         try:
@@ -1245,21 +1312,29 @@ class MainWindow(QtWidgets.QMainWindow):
         return outer
 
     def _scan_cameras(self):
-        from app.face_engine import list_cameras
+        """수동 카메라 검색: 로딩창을 띄우고 스레드에서 검색 (UI 멈춤/튕김 방지)."""
+        self._run_camera_scan(show_warning_if_none=True)
 
-        self.statusBar().showMessage("카메라 검색 중...")
-        QtWidgets.QApplication.processEvents()
-        found = list_cameras(5)
-        self.cam_combo.clear()
-        if not found:
-            self.cam_combo.addItem("연결된 카메라 없음", -1)
-            QtWidgets.QMessageBox.warning(
-                self, "카메라 검색", "사용 가능한 카메라를 찾지 못했습니다."
-            )
-        else:
-            for i in found:
-                self.cam_combo.addItem(f"카메라 {i}", i)
-            self.statusBar().showMessage(f"카메라 {len(found)}개 발견: {found}")
+    def _run_camera_scan(self, show_warning_if_none=False):
+        """카메라 검색을 스레드로 수행하고, 그동안 모달 로딩창을 표시."""
+        # 이미 검색 중이면 무시
+        if getattr(self, "cam_scan_thread", None) and self.cam_scan_thread.isRunning():
+            return
+        self._scan_warn = show_warning_if_none
+        self._scan_dialog = LoadingDialog("카메라를 검색하는 중입니다...", self)
+        self.cam_scan_thread = CameraScanThread(5)
+        self.cam_scan_thread.done.connect(self._on_cameras_found)
+        self.cam_scan_thread.start()
+        # 안전장치: 검색이 비정상적으로 오래 걸리면 로딩창을 강제로 닫음
+        QtCore.QTimer.singleShot(15000, self._force_close_scan_dialog)
+        self._scan_dialog.exec_()  # 검색이 끝나면 _on_cameras_found에서 닫음
+
+    def _force_close_scan_dialog(self):
+        dlg = getattr(self, "_scan_dialog", None)
+        if dlg is not None:
+            dlg.accept()
+            self._scan_dialog = None
+            self.statusBar().showMessage("카메라 검색 시간 초과 — 설정에서 다시 시도하세요.")
 
     def _test_camera(self):
         from app.face_engine import test_camera

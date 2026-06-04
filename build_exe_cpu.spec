@@ -15,16 +15,47 @@ The app code itself is unchanged; face_engine auto-selects CPU when no GPU.
 """
 import os
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_data_files, collect_submodules, collect_dynamic_libs,
+)
 
-# facenet_pytorch: collect code + data only. torch handled by built-in hook.
+# facenet_pytorch: collect code + data.
 hiddenimports = collect_submodules("facenet_pytorch")
+
+# torch: the built-in hook sometimes misses the C extension (torch._C),
+# causing "NameError: name '_C' is not defined" at runtime. Collect torch
+# submodules + DLLs, but DROP heavy unused subpackages (testing, distributed,
+# onnx, quantization, benchmark...) — those add thousands of files and make the
+# build extremely slow without being used by an inference-only app.
+_TORCH_SKIP = (
+    "torch.testing", "torch.distributed", "torch.onnx", "torch.quantization",
+    "torch.ao", "torch.utils.benchmark", "torch.utils.tensorboard",
+    "torch.utils.bottleneck", "torch.utils.data.datapipes", "torch.profiler",
+    "torch.package", "torch._dynamo", "torch._inductor",
+    "torch.utils.viz", "torch.utils.model_dump",
+)
+def _keep(mod):
+    return not any(mod == s or mod.startswith(s + ".") for s in _TORCH_SKIP)
+
+hiddenimports += [m for m in collect_submodules("torch") if _keep(m)]
+hiddenimports += ["torch._C", "torchvision"]
+
 # TTS: pyttsx3 imports its driver dynamically, so list it explicitly.
 hiddenimports += [
     "pyttsx3", "pyttsx3.drivers", "pyttsx3.drivers.sapi5",
     "win32com", "win32com.client", "pythoncom", "pywintypes",
 ]
+
 datas = collect_data_files("facenet_pytorch")
+datas += collect_data_files("torch")
+
+# OpenCV video I/O backends (camera) + torch/torchvision native DLLs.
+# Without the cv2 libs the built exe can't open a webcam; without the torch
+# libs torch._C fails to load.
+datas += collect_data_files("cv2")
+binaries = collect_dynamic_libs("cv2")
+binaries += collect_dynamic_libs("torch")
+binaries += collect_dynamic_libs("torchvision")
 
 # --- App icon (window / taskbar) ---
 ICON_FILE = "favicon.ico"
@@ -56,13 +87,22 @@ if _cache:
 else:
     print("[spec-cpu] warning: vggface2 weights cache not found (will download on first run if online).")
 
-# CUDA libraries are not needed in a CPU build. Excluding them keeps the
-# output small even if a CUDA-enabled torch is somehow visible on the system.
+# Exclude only the external CUDA packages (not torch's own cuda submodules,
+# which CPU torch still imports as stubs and must load cleanly). This keeps
+# the build small without breaking torch import.
 cuda_excludes = [
-    "torch.cuda", "torch.backends.cudnn",
     "nvidia", "nvidia.cublas", "nvidia.cuda_runtime", "nvidia.cudnn",
     "nvidia.cufft", "nvidia.curand", "nvidia.cusolver", "nvidia.cusparse",
     "nvidia.nccl", "nvidia.nvtx", "triton",
+]
+
+# Heavy torch subpackages an inference-only app never uses. Excluding them
+# cuts the file count (and build time) dramatically.
+torch_excludes = [
+    "torch.testing", "torch.distributed", "torch.onnx", "torch.quantization",
+    "torch.ao", "torch.utils.benchmark", "torch.utils.tensorboard",
+    "torch.utils.bottleneck", "torch.profiler", "torch.package",
+    "torch._dynamo", "torch._inductor",
 ]
 
 block_cipher = None
@@ -70,12 +110,12 @@ block_cipher = None
 a = Analysis(
     ["run_app.py"],
     pathex=["."],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=["rthook_torch_home.py"],
-    excludes=["tensorboard", "matplotlib", "expecttest"] + cuda_excludes,
+    excludes=["tensorboard", "matplotlib", "expecttest"] + cuda_excludes + torch_excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -93,7 +133,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,
+    console=False,  # 배포용. 디버깅이 필요하면 True 로 바꿔 재빌드
     icon=ICON_FILE if os.path.exists(ICON_FILE) else None,
 )
 
