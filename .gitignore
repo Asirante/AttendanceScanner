@@ -19,6 +19,8 @@ runs/*
 !data/splits/test/.gitkeep
 !models/.gitkeep
 !runs/.gitkeep
+!runs/figs/
+!runs/figs/*.png
 
 models/*.pth
 
@@ -40,3 +42,4 @@ build/
 *.spec.bak
 data/label_map.json
 Docs/
+!docs/*.png
