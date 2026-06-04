@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import config as appcfg
 from app import tts
 from app.core import AttendanceDB
-from app.face_engine import FaceEngine, average_embeddings, cosine_best_match
+from app.face_engine import FaceEngine, average_embeddings, cosine_best_match, open_camera_safe
 
 ACTION_KEYS = {"출근": "1", "외출": "2", "복귀": "3", "퇴근": "4", "퇴근갱신": "5"}
 ACTION_LABELS = {"퇴근갱신": "퇴근 시각 갱신"}
@@ -88,6 +88,22 @@ def bgr_to_qpixmap(frame_bgr) -> QtGui.QPixmap:
     img = QtGui.QImage(rgb.data, w, h, ch * w, QtGui.QImage.Format_RGB888)
     return QtGui.QPixmap.fromImage(img.copy())
 
+class CameraScanThread(QtCore.QThread):
+    """앱 시작 시 백그라운드로 사용 가능한 카메라를 검색 (UI를 막지 않음)."""
+    done = QtCore.pyqtSignal(list)
+
+    def __init__(self, max_index: int = 5):
+        super().__init__()
+        self.max_index = max_index
+
+    def run(self):
+        try:
+            from app.face_engine import list_cameras
+            found = list_cameras(self.max_index)
+        except Exception:
+            found = []
+        self.done.emit(found)
+
 class RecognizeThread(QtCore.QThread):
     frame_ready = QtCore.pyqtSignal(np.ndarray)
     recognized = QtCore.pyqtSignal(str, str, float)
@@ -119,9 +135,9 @@ class RecognizeThread(QtCore.QThread):
         import time as _t
         self._running = True
         self.status.emit("카메라 여는 중...")
-        cap = cv2.VideoCapture(self.camera_index)
-        if not cap.isOpened():
-            self.status.emit("카메라를 열 수 없습니다. 다른 앱이 사용 중인지 확인하세요.")
+        cap = open_camera_safe(self.camera_index, timeout=3.0)
+        if cap is None:
+            self.status.emit("카메라를 열 수 없습니다. 설정에서 다른 카메라를 선택하세요.")
             return
         self.engine.load(progress_cb=self.status.emit)
         self.reload_embeddings()
@@ -135,6 +151,11 @@ class RecognizeThread(QtCore.QThread):
         dwell_start = 0.0      # 자동 모드: 체류 시작 시각
         dwell_action = None    # 자동 모드: 예정 동작(체류 시작 시 1회 조회)
         while self._running:
+            if cap is None:
+                # 재연결 대기 중 — 다시 열어본다
+                self.msleep(1000)
+                cap = open_camera_safe(self.camera_index, timeout=3.0)
+                continue
             ret, frame = cap.read()
             if not ret:
                 # 카메라 일시적 끊김 → 재연결 시도 (장기 운영 대비)
@@ -144,7 +165,10 @@ class RecognizeThread(QtCore.QThread):
                 self.msleep(1000)
                 if not self._running:
                     break
-                cap = cv2.VideoCapture(self.camera_index)
+                cap = open_camera_safe(self.camera_index, timeout=3.0)
+                if cap is None:
+                    # 재연결 실패 — 다음 루프에서 다시 시도
+                    continue
                 if read_fail > 30:  # 30초 넘게 실패하면 잠깐 길게 대기
                     self.msleep(3000)
                 continue
@@ -213,7 +237,8 @@ class RecognizeThread(QtCore.QThread):
             if frame_no % 1800 == 0:  # 대략 수십 초~1분마다
                 self.engine.cleanup()
             self.msleep(15)
-        cap.release()
+        if cap is not None:
+            cap.release()
 
     def resume(self):
         self._paused = False
@@ -365,10 +390,13 @@ class RegisterDialog(QtWidgets.QDialog):
             return True
         self.status.setText("카메라 여는 중...")
         QtWidgets.QApplication.processEvents()
-        self._cap = cv2.VideoCapture(self.camera_index)
-        if not self._cap.isOpened():
-            self._cap = None
-            self.status.setText("카메라를 열 수 없습니다. 설정 탭에서 카메라를 확인하세요.")
+        # 가상캠 등이 멈추게 하는 것을 막기 위해 timeout 적용해 안전하게 연다
+        from app.face_engine import open_camera_safe
+        self._cap = open_camera_safe(self.camera_index, timeout=3.0)
+        if self._cap is None:
+            self.status.setText(
+                "카메라를 열 수 없습니다. 설정 탭에서 다른 카메라를 선택하세요."
+            )
             return False
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._cam_tick)
@@ -652,6 +680,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.engine = FaceEngine(use_fp16=self.cfg.get("use_fp16", True))
         self.db = None
         self.rec_thread = None
+        self.cam_scan_thread = None
         self.setWindowTitle("AI 안면인식 출퇴근 시스템")
         icon_path = appcfg.resource_path("favicon.ico")
         if os.path.exists(icon_path):
@@ -659,6 +688,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(960, 700)
         self._open_db()
         self._build()
+        self._start_camera_scan()
+
+    def _start_camera_scan(self):
+        """앱 시작 시 백그라운드로 카메라를 검색해 설정 콤보를 채운다."""
+        self.cam_scan_thread = CameraScanThread(5)
+        self.cam_scan_thread.done.connect(self._on_cameras_found)
+        self.cam_scan_thread.start()
+
+    def _on_cameras_found(self, found):
+        """백그라운드 카메라 검색 결과로 콤보를 갱신 (현재 설정값은 유지)."""
+        if not hasattr(self, "cam_combo"):
+            return
+        cur = self.cfg.get("camera_index", 0)
+        self.cam_combo.blockSignals(True)
+        self.cam_combo.clear()
+        if found:
+            for i in found:
+                self.cam_combo.addItem(f"카메라 {i}", i)
+            # 기존 설정값이 목록에 있으면 그걸 선택, 없으면 첫 번째
+            idx = found.index(cur) if cur in found else 0
+            self.cam_combo.setCurrentIndex(idx)
+            self.statusBar().showMessage(f"카메라 {len(found)}개 발견: {found}")
+        else:
+            self.cam_combo.addItem(f"카메라 {cur}", cur)
+            self.statusBar().showMessage("카메라 자동 검색: 발견된 카메라 없음")
+        self.cam_combo.blockSignals(False)
 
     def _open_db(self):
         try:
@@ -1294,6 +1349,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, e):
         if self.rec_thread:
             self.rec_thread.stop()
+        if self.cam_scan_thread and self.cam_scan_thread.isRunning():
+            self.cam_scan_thread.wait(3000)
         if self.db:
             self.db.close()
         super().closeEvent(e)
