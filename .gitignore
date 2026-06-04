@@ -38,3 +38,5 @@ config.json
 dist/
 build/
 *.spec.bak
+data/label_map.json
+Docs/
