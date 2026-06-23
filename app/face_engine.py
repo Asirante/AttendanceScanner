@@ -13,93 +13,193 @@ class FaceEngine:
         self.torch = None
 
     def load(self, progress_cb=None):
-        """모델 로드(최초 1회). progress_cb(str) 로 진행 상황 전달 가능."""
+        """모델 로드(최초 1회). progress_cb(str)로 진행 상황 전달 가능.
+        실패해도 예외를 던지지 않고 False를 반환한다(앱 크래시 방지).
+        """
         if self._loaded:
-            return
-        if progress_cb:
-            progress_cb(
-                "모델 로딩 중... (최초 실행은 가중치 다운로드로 시간이 걸립니다)"
+            return True
+
+        def _report(msg):
+            if progress_cb:
+                try:
+                    progress_cb(msg)
+                except Exception:
+                    pass  # progress_cb 자체가 죽어도 무시
+
+        self._load_error = None
+        _report(
+            "모델 로딩 중... (최초 실행은 가중치 다운로드로 시간이 걸립니다)"
+        )
+
+        try:
+            import torch
+            from facenet_pytorch import (
+                MTCNN,
+                InceptionResnetV1,
             )
-        import torch
-        from facenet_pytorch import MTCNN, InceptionResnetV1
+        except ImportError as e:
+            self._load_error = f"필수 패키지 누락: {e}"
+            _report(f"모델 로딩 실패: {self._load_error}")
+            return False
+        except Exception as e:
+            self._load_error = f"모듈 import 중 오류: {e}"
+            _report(f"모델 로딩 실패: {self._load_error}")
+            return False
 
         self.torch = torch
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        self.mtcnn = MTCNN(
-            image_size=160,
-            margin=20,
-            post_process=False,
-            device=self.device,
-        )
-        self.backbone = (
-            InceptionResnetV1(pretrained="vggface2")
-            .eval()
-            .to(self.device)
-        )
-        self._fp16_active = (
-            self.use_fp16 and self.device.type == "cuda"
-        )
-        if self._fp16_active:
-            self.backbone.half()
-        self._loaded = True
-        if progress_cb:
-            dev = (
-                "GPU"
-                if self.device.type == "cuda"
-                else "CPU"
-            )
-            progress_cb(f"모델 로딩 완료 ({dev})")
+
+        # GPU 우선 시도 -> 실패하면 CPU로 자동 폴백
+        device_candidates = []
+        if torch.cuda.is_available():
+            device_candidates.append(torch.device("cuda"))
+        device_candidates.append(torch.device("cpu"))
+
+        last_err = None
+        for device in device_candidates:
+            try:
+                mtcnn = MTCNN(
+                    image_size=160,
+                    margin=20,
+                    post_process=False,
+                    device=device,
+                )
+                backbone = (
+                    InceptionResnetV1(pretrained="vggface2")
+                    .eval()
+                    .to(device)
+                )
+
+                fp16_active = (
+                    self.use_fp16 and device.type == "cuda"
+                )
+                if fp16_active:
+                    backbone.half()
+
+                # 여기까지 왔으면 성공 -> 상태 확정
+                self.device = device
+                self.mtcnn = mtcnn
+                self.backbone = backbone
+                self._fp16_active = fp16_active
+                self._loaded = True
+
+                dev_label = (
+                    "GPU"
+                    if device.type == "cuda"
+                    else "CPU"
+                )
+                _report(f"모델 로딩 완료 ({dev_label})")
+                return True
+
+            except Exception as e:
+                last_err = e
+                dev_label = (
+                    "GPU"
+                    if device.type == "cuda"
+                    else "CPU"
+                )
+                _report(
+                    f"{dev_label} 로딩 실패 ({e}), 다음 방법 시도 중..."
+                )
+                try:
+                    if device.type == "cuda":
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                continue
+
+        # 모든 디바이스에서 실패
+        self._load_error = str(last_err)
+        self.mtcnn = None
+        self.backbone = None
+        self.torch = None
+        self.device = None
+        self._loaded = False
+        _report(f"모델 로딩 실패: {self._load_error}")
+        return False
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    def get_load_error(self):
+        return getattr(self, "_load_error", None)
 
     def embed_face(self, frame_bgr) -> np.ndarray:
-        """BGR 프레임 1장 → L2 정규화된 512-dim 임베딩(float32) 또는 None."""
-        self.load()
-        import cv2
-        from PIL import Image
+        """BGR 프레임 1장 → L2 정규화된 512-dim 임베딩(float32) 또는 None.
 
-        img_pil = Image.fromarray(
-            cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        )
-        boxes, probs = self.mtcnn.detect(img_pil)
+        모델이 로드되지 않았거나(다운로드 실패 등) 추론 중 예외가 발생해도
+        예외를 던지지 않고 None을 반환한다(앱 크래시 방지).
+        """
+        if not self._loaded:
+            self.load()  # 최초 1회 시도 (실패해도 False만 반환, 예외 없음)
+
         if (
-            probs is None
-            or probs[0] is None
-            or probs[0] < 0.95
+            not self._loaded
+            or self.mtcnn is None
+            or self.backbone is None
         ):
+            # 모델을 쓸 수 없는 상태 — 호출부에서 "얼굴 없음"과 동일하게 처리
             return None
-        face = self.mtcnn(img_pil)
-        if face is None:
-            return None
-        torch = self.torch
-        inp = (
-            ((face - 127.5) / 128.0)
-            .unsqueeze(0)
-            .to(self.device)
-        )
-        if getattr(self, "_fp16_active", False):
-            inp = inp.half()
-        with torch.no_grad():
-            emb = self.backbone(inp)
-            emb = torch.nn.functional.normalize(
-                emb, p=2, dim=1
+
+        try:
+            import cv2
+            from PIL import Image
+
+            img_pil = Image.fromarray(
+                cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             )
-            emb = emb.squeeze(0).float().cpu().numpy()
-        return emb.astype(np.float32)
+            boxes, probs = self.mtcnn.detect(img_pil)
+            if (
+                probs is None
+                or probs[0] is None
+                or probs[0] < 0.95
+            ):
+                return None
+            face = self.mtcnn(img_pil)
+            if face is None:
+                return None
+            torch = self.torch
+            inp = (
+                ((face - 127.5) / 128.0)
+                .unsqueeze(0)
+                .to(self.device)
+            )
+            if getattr(self, "_fp16_active", False):
+                inp = inp.half()
+            with torch.no_grad():
+                emb = self.backbone(inp)
+                emb = torch.nn.functional.normalize(
+                    emb, p=2, dim=1
+                )
+                emb = emb.squeeze(0).float().cpu().numpy()
+            return emb.astype(np.float32)
+        except Exception:
+            # 추론 중 예기치 못한 오류(OOM, 손상된 프레임 등) — 크래시 대신 실패 처리
+            return None
 
     def detect_box(self, frame_bgr):
-        """프레임에서 첫 얼굴 박스 (x1,y1,x2,y2) 또는 None — 미리보기용."""
-        self.load()
-        import cv2
-        from PIL import Image
+        """프레임에서 첫 얼굴 박스 (x1,y1,x2,y2) 또는 None — 미리보기용.
 
-        img_pil = Image.fromarray(
-            cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        )
-        boxes, probs = self.mtcnn.detect(img_pil)
-        if boxes is None or len(boxes) == 0:
+        모델 미로드/추론 오류 시에도 예외 없이 None을 반환한다.
+        """
+        if not self._loaded:
+            self.load()
+
+        if not self._loaded or self.mtcnn is None:
             return None
-        return tuple(int(v) for v in boxes[0])
+
+        try:
+            import cv2
+            from PIL import Image
+
+            img_pil = Image.fromarray(
+                cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            )
+            boxes, probs = self.mtcnn.detect(img_pil)
+            if boxes is None or len(boxes) == 0:
+                return None
+            return tuple(int(v) for v in boxes[0])
+        except Exception:
+            return None
 
     def cleanup(self):
         """장시간 운영 시 누적되는 GPU 캐시를 주기적으로 비운다."""

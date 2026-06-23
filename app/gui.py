@@ -1,4 +1,5 @@
 """AI 안면인식 출퇴근 시스템 — 통합 GUI 애플리케이션 (PyQt5)."""
+
 import os
 import sys
 import time
@@ -8,13 +9,29 @@ import cv2
 import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(
+    0,
+    os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))
+    ),
+)
 from app import config as appcfg
 from app import tts
 from app.core import AttendanceDB
-from app.face_engine import FaceEngine, average_embeddings, cosine_best_match, open_camera_safe
+from app.face_engine import (
+    FaceEngine,
+    average_embeddings,
+    cosine_best_match,
+    open_camera_safe,
+)
 
-ACTION_KEYS = {"출근": "1", "외출": "2", "복귀": "3", "퇴근": "4", "퇴근갱신": "5"}
+ACTION_KEYS = {
+    "출근": "1",
+    "외출": "2",
+    "복귀": "3",
+    "퇴근": "4",
+    "퇴근갱신": "5",
+}
 ACTION_LABELS = {"퇴근갱신": "퇴근 시각 갱신"}
 
 LIGHT_QSS = """
@@ -81,15 +98,20 @@ QCheckBox { color: #374151; }
 QMessageBox { background: #ffffff; }
 """
 
+
 def bgr_to_qpixmap(frame_bgr) -> QtGui.QPixmap:
     """OpenCV BGR 프레임 → QPixmap (미러링은 호출부에서 처리)."""
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     h, w, ch = rgb.shape
-    img = QtGui.QImage(rgb.data, w, h, ch * w, QtGui.QImage.Format_RGB888)
+    img = QtGui.QImage(
+        rgb.data, w, h, ch * w, QtGui.QImage.Format_RGB888
+    )
     return QtGui.QPixmap.fromImage(img.copy())
+
 
 class CameraScanThread(QtCore.QThread):
     """앱 시작 시 백그라운드로 사용 가능한 카메라를 검색 (UI를 막지 않음)."""
+
     done = QtCore.pyqtSignal(list)
 
     def __init__(self, max_index: int = 5):
@@ -99,10 +121,12 @@ class CameraScanThread(QtCore.QThread):
     def run(self):
         try:
             from app.face_engine import list_cameras
+
             found = list_cameras(self.max_index)
         except Exception:
             found = []
         self.done.emit(found)
+
 
 class LoadingDialog(QtWidgets.QDialog):
     """검색 등 짧은 작업 동안 띄우는 모달 로딩창 (진행 표시줄 포함)."""
@@ -112,7 +136,9 @@ class LoadingDialog(QtWidgets.QDialog):
         self.setWindowTitle("")
         self.setModal(True)
         # 닫기 버튼·테두리 없는 단순한 창
-        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(
+            QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint
+        )
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(28, 24, 28, 24)
         self.label = QtWidgets.QLabel(text)
@@ -132,16 +158,27 @@ class LoadingDialog(QtWidgets.QDialog):
             self.adjustSize()
             self.move(pg.center() - self.rect().center())
 
+
 class RecognizeThread(QtCore.QThread):
     frame_ready = QtCore.pyqtSignal(np.ndarray)
     recognized = QtCore.pyqtSignal(str, str, float)
-    auto_recognized = QtCore.pyqtSignal(str, str, float)  # 자동 모드 처리용
+    auto_recognized = QtCore.pyqtSignal(
+        str, str, float
+    )  # 자동 모드 처리용
     status = QtCore.pyqtSignal(str)
 
-    def __init__(self, engine: FaceEngine, db: AttendanceDB,
-                 sim_thr: float, vote_n: int, camera_index: int = 0,
-                 cooldown_sec: float = 1.0, auto_mode: bool = False,
-                 dwell_sec: float = 2.0, auto_preview: bool = True):
+    def __init__(
+        self,
+        engine: FaceEngine,
+        db: AttendanceDB,
+        sim_thr: float,
+        vote_n: int,
+        camera_index: int = 0,
+        cooldown_sec: float = 1.0,
+        auto_mode: bool = False,
+        dwell_sec: float = 2.0,
+        auto_preview: bool = True,
+    ):
         super().__init__()
         self.engine = engine
         self.db = db
@@ -161,49 +198,82 @@ class RecognizeThread(QtCore.QThread):
 
     def run(self):
         import time as _t
+
         self._running = True
         self.status.emit("카메라 여는 중...")
-        cap = open_camera_safe(self.camera_index, timeout=3.0)
+        cap = open_camera_safe(
+            self.camera_index, timeout=3.0
+        )
         if cap is None:
-            self.status.emit("카메라를 열 수 없습니다. 설정에서 다른 카메라를 선택하세요.")
+            self.status.emit(
+                "카메라를 열 수 없습니다. 설정에서 다른 카메라를 선택하세요."
+            )
             return
-        self.engine.load(progress_cb=self.status.emit)
+
+        model_ready = self.engine.load(
+            progress_cb=self.status.emit
+        )
+        if not model_ready:
+            err = self.engine.get_load_error()
+            self.status.emit(
+                f"AI 모델 로딩 실패 — 얼굴 인식 없이 카메라만 표시됩니다. ({err})"
+            )
         self.reload_embeddings()
-        self.status.emit(f"인식 대기 중 — 등록 직원 {len(self.db_embeddings)}명")
+        if model_ready:
+            self.status.emit(
+                f"인식 대기 중 — 등록 직원 {len(self.db_embeddings)}명"
+            )
         vote = deque(maxlen=self.vote_n)
         frame_no = 0
         read_fail = 0
-        cooldown_until = 0.0   # 이 시각 전까지는 재인식 안 함
-        rearm = True           # 빈 화면(얼굴 없음)을 본 뒤에야 다시 인식 준비
-        dwell_id = None        # 자동 모드: 현재 연속 체류 중인 사람
-        dwell_start = 0.0      # 자동 모드: 체류 시작 시각
-        dwell_action = None    # 자동 모드: 예정 동작(체류 시작 시 1회 조회)
+        cooldown_until = (
+            0.0  # 이 시각 전까지는 재인식 안 함
+        )
+        rearm = True  # 빈 화면(얼굴 없음)을 본 뒤에야 다시 인식 준비
+        dwell_id = (
+            None  # 자동 모드: 현재 연속 체류 중인 사람
+        )
+        dwell_start = 0.0  # 자동 모드: 체류 시작 시각
+        dwell_action = None  # 자동 모드: 예정 동작(체류 시작 시 1회 조회)
         while self._running:
             if cap is None:
                 # 재연결 대기 중 — 다시 열어본다
                 self.msleep(1000)
-                cap = open_camera_safe(self.camera_index, timeout=3.0)
+                cap = open_camera_safe(
+                    self.camera_index, timeout=3.0
+                )
                 continue
             ret, frame = cap.read()
             if not ret:
                 # 카메라 일시적 끊김 → 재연결 시도 (장기 운영 대비)
                 read_fail += 1
-                self.status.emit(f"카메라 신호 없음… 재연결 시도 ({read_fail})")
+                self.status.emit(
+                    f"카메라 신호 없음… 재연결 시도 ({read_fail})"
+                )
                 cap.release()
                 self.msleep(1000)
                 if not self._running:
                     break
-                cap = open_camera_safe(self.camera_index, timeout=3.0)
+                cap = open_camera_safe(
+                    self.camera_index, timeout=3.0
+                )
                 if cap is None:
                     # 재연결 실패 — 다음 루프에서 다시 시도
                     continue
-                if read_fail > 30:  # 30초 넘게 실패하면 잠깐 길게 대기
+                if (
+                    read_fail > 30
+                ):  # 30초 넘게 실패하면 잠깐 길게 대기
                     self.msleep(3000)
                 continue
             read_fail = 0
             frame_no += 1
             now = _t.time()
-            if not self._paused and self.db_embeddings and now >= cooldown_until:
+            if (
+                model_ready
+                and not self._paused
+                and self.db_embeddings
+                and now >= cooldown_until
+            ):
                 try:
                     emb = self.engine.embed_face(frame)
                 except Exception as e:
@@ -216,7 +286,9 @@ class RecognizeThread(QtCore.QThread):
                     dwell_id = None
                 elif rearm:
                     emp_id, name, sim = cosine_best_match(
-                        emb, self.db_embeddings, self.sim_thr
+                        emb,
+                        self.db_embeddings,
+                        self.sim_thr,
                     )
                     if emp_id is None:
                         vote.clear()
@@ -224,11 +296,20 @@ class RecognizeThread(QtCore.QThread):
                     elif self.auto_mode:
                         # 자동 모드: 같은 사람이 dwell_sec 이상 연속 체류하면 자동 처리
                         if emp_id != dwell_id:
-                            dwell_id, dwell_start = emp_id, now
+                            dwell_id, dwell_start = (
+                                emp_id,
+                                now,
+                            )
                             # 체류 시작 시 예정 동작을 한 번만 조회
                             try:
-                                acts = self.db.get_available_actions(emp_id)
-                                dwell_action = acts[0] if acts else None
+                                acts = self.db.get_available_actions(
+                                    emp_id
+                                )
+                                dwell_action = (
+                                    acts[0]
+                                    if acts
+                                    else None
+                                )
                             except Exception:
                                 # DB가 교체/종료 중이면 이번 프레임은 건너뜀
                                 dwell_id = None
@@ -236,17 +317,36 @@ class RecognizeThread(QtCore.QThread):
                         held = now - dwell_start
                         remain = self.dwell_sec - held
                         if remain > 0:
-                            if self.auto_preview and dwell_action:
-                                lab = ACTION_LABELS.get(dwell_action, dwell_action)
-                                self.status.emit(f"{name} — 곧 [{lab}] 처리 · {remain:.1f}초")
-                            elif self.auto_preview and dwell_action is None:
-                                self.status.emit(f"{name} — 당일 처리 완료 (추가 동작 없음)")
+                            if (
+                                self.auto_preview
+                                and dwell_action
+                            ):
+                                lab = ACTION_LABELS.get(
+                                    dwell_action,
+                                    dwell_action,
+                                )
+                                self.status.emit(
+                                    f"{name} — 곧 [{lab}] 처리 · {remain:.1f}초"
+                                )
+                            elif (
+                                self.auto_preview
+                                and dwell_action is None
+                            ):
+                                self.status.emit(
+                                    f"{name} — 당일 처리 완료 (추가 동작 없음)"
+                                )
                             else:
-                                self.status.emit(f"{name} 인식 중… {remain:.1f}초")
+                                self.status.emit(
+                                    f"{name} 인식 중… {remain:.1f}초"
+                                )
                         else:
-                            self.auto_recognized.emit(emp_id, name, sim)
+                            self.auto_recognized.emit(
+                                emp_id, name, sim
+                            )
                             self._paused = True
-                            cooldown_until = now + self.cooldown_sec
+                            cooldown_until = (
+                                now + self.cooldown_sec
+                            )
                             rearm = False
                             dwell_id = None
                     else:
@@ -254,15 +354,24 @@ class RecognizeThread(QtCore.QThread):
                         if vote and vote[-1] != emp_id:
                             vote.clear()
                         vote.append(emp_id)
-                        if len(vote) == self.vote_n and len(set(vote)) == 1:
-                            self.recognized.emit(emp_id, name, sim)
+                        if (
+                            len(vote) == self.vote_n
+                            and len(set(vote)) == 1
+                        ):
+                            self.recognized.emit(
+                                emp_id, name, sim
+                            )
                             vote.clear()
                             self._paused = True
-                            cooldown_until = now + self.cooldown_sec
+                            cooldown_until = (
+                                now + self.cooldown_sec
+                            )
                             rearm = False
             self.frame_ready.emit(frame)
             # 주기적 GPU 캐시 정리 (장시간 운영 시 VRAM 누적 방지)
-            if frame_no % 1800 == 0:  # 대략 수십 초~1분마다
+            if (
+                model_ready and frame_no % 1800 == 0
+            ):  # 대략 수십 초~1분마다
                 self.engine.cleanup()
             self.msleep(15)
         if cap is not None:
@@ -275,13 +384,19 @@ class RecognizeThread(QtCore.QThread):
         self._running = False
         self.wait(2000)
 
+
 class VideoRegisterThread(QtCore.QThread):
     progress = QtCore.pyqtSignal(int, int)
     done = QtCore.pyqtSignal(object)
     status = QtCore.pyqtSignal(str)
 
-    def __init__(self, engine: FaceEngine, video_path: str,
-                 frame_skip: int = 5, max_frames: int = 30):
+    def __init__(
+        self,
+        engine: FaceEngine,
+        video_path: str,
+        frame_skip: int = 5,
+        max_frames: int = 30,
+    ):
         super().__init__()
         self.engine = engine
         self.video_path = video_path
@@ -289,7 +404,16 @@ class VideoRegisterThread(QtCore.QThread):
         self.max_frames = max_frames
 
     def run(self):
-        self.engine.load(progress_cb=self.status.emit)
+        if not self.engine.load(
+            progress_cb=self.status.emit
+        ):
+            err = self.engine.get_load_error()
+            self.status.emit(
+                f"AI 모델을 불러올 수 없어 처리할 수 없습니다. ({err})"
+            )
+            self.done.emit(None)
+            return
+
         cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
             self.status.emit("동영상을 열 수 없습니다.")
@@ -297,27 +421,47 @@ class VideoRegisterThread(QtCore.QThread):
             return
         embs = []
         idx = 0
-        while cap.isOpened() and len(embs) < self.max_frames:
+        while (
+            cap.isOpened() and len(embs) < self.max_frames
+        ):
             ret, frame = cap.read()
             if not ret:
                 break
             if idx % self.frame_skip == 0:
-                emb = self.engine.embed_face(frame)
+                try:
+                    emb = self.engine.embed_face(frame)
+                except Exception as e:
+                    emb = None
+                    self.status.emit(
+                        f"프레임 처리 오류: {e}"
+                    )
                 if emb is not None:
                     embs.append(emb)
-                    self.progress.emit(len(embs), self.max_frames)
+                    self.progress.emit(
+                        len(embs), self.max_frames
+                    )
             idx += 1
         cap.release()
         if not embs:
-            self.status.emit("얼굴을 찾지 못했습니다. 다른 동영상을 시도하세요.")
+            self.status.emit(
+                "얼굴을 찾지 못했습니다. 다른 동영상을 시도하세요."
+            )
             self.done.emit(None)
         else:
-            self.status.emit(f"{len(embs)}개 프레임에서 임베딩 추출 완료")
+            self.status.emit(
+                f"{len(embs)}개 프레임에서 임베딩 추출 완료"
+            )
             self.done.emit(average_embeddings(embs))
 
+
 class RegisterDialog(QtWidgets.QDialog):
-    def __init__(self, engine: FaceEngine, db: AttendanceDB, parent=None,
-                 camera_index: int = 0):
+    def __init__(
+        self,
+        engine: FaceEngine,
+        db: AttendanceDB,
+        parent=None,
+        camera_index: int = 0,
+    ):
         super().__init__(parent)
         self.engine = engine
         self.db = db
@@ -336,15 +480,23 @@ class RegisterDialog(QtWidgets.QDialog):
         form = QtWidgets.QHBoxLayout()
         form.addWidget(QtWidgets.QLabel("이름:"))
         self.name_edit = QtWidgets.QLineEdit()
-        self.name_edit.setPlaceholderText("등록할 직원 이름 (입력해야 등록 시작)")
-        self.name_edit.textChanged.connect(self._on_name_changed)
+        self.name_edit.setPlaceholderText(
+            "등록할 직원 이름 (입력해야 등록 시작)"
+        )
+        self.name_edit.textChanged.connect(
+            self._on_name_changed
+        )
         form.addWidget(self.name_edit)
         nid = self.db.next_emp_id()
-        self.id_label = QtWidgets.QLabel(f"자동 ID: <b>{nid}</b>")
+        self.id_label = QtWidgets.QLabel(
+            f"자동 ID: <b>{nid}</b>"
+        )
         form.addWidget(self.id_label)
         v.addLayout(form)
 
-        self.preview = QtWidgets.QLabel("이름을 입력한 뒤 등록 방법을 선택하세요")
+        self.preview = QtWidgets.QLabel(
+            "이름을 입력한 뒤 등록 방법을 선택하세요"
+        )
         self.preview.setAlignment(QtCore.Qt.AlignCenter)
         self.preview.setMinimumHeight(360)
         self.preview.setProperty("viewport", True)
@@ -357,20 +509,36 @@ class RegisterDialog(QtWidgets.QDialog):
 
         # 등록 방법 3종 — 이름 입력 전엔 모두 비활성
         btns = QtWidgets.QHBoxLayout()
-        self.capture_mode_btn = QtWidgets.QPushButton("캡처로 등록")
-        self.capture_mode_btn.clicked.connect(self.start_capture_mode)
-        self.record_mode_btn = QtWidgets.QPushButton("영상으로 등록")
-        self.record_mode_btn.clicked.connect(self.start_record_mode)
-        self.video_btn = QtWidgets.QPushButton("영상 업로드")
+        self.capture_mode_btn = QtWidgets.QPushButton(
+            "캡처로 등록"
+        )
+        self.capture_mode_btn.clicked.connect(
+            self.start_capture_mode
+        )
+        self.record_mode_btn = QtWidgets.QPushButton(
+            "영상으로 등록"
+        )
+        self.record_mode_btn.clicked.connect(
+            self.start_record_mode
+        )
+        self.video_btn = QtWidgets.QPushButton(
+            "영상 업로드"
+        )
         self.video_btn.clicked.connect(self.pick_video)
-        for b in (self.capture_mode_btn, self.record_mode_btn, self.video_btn):
+        for b in (
+            self.capture_mode_btn,
+            self.record_mode_btn,
+            self.video_btn,
+        ):
             b.setEnabled(False)
             btns.addWidget(b)
         v.addLayout(btns)
 
         # 캡처 모드 전용 버튼
         cam_actions = QtWidgets.QHBoxLayout()
-        self.capture_btn = QtWidgets.QPushButton("현재 얼굴 캡처 (0/10)")
+        self.capture_btn = QtWidgets.QPushButton(
+            "현재 얼굴 캡처 (0/10)"
+        )
         self.capture_btn.clicked.connect(self.capture_one)
         self.capture_btn.setEnabled(False)
         cam_actions.addWidget(self.capture_btn)
@@ -379,7 +547,9 @@ class RegisterDialog(QtWidgets.QDialog):
         self.status = QtWidgets.QLabel("")
         self.status.setProperty("muted", True)
         v.addWidget(self.status)
-        self.register_btn = QtWidgets.QPushButton("등록 완료")
+        self.register_btn = QtWidgets.QPushButton(
+            "등록 완료"
+        )
         self.register_btn.setProperty("accent", True)
         self.register_btn.setMinimumHeight(40)
         self.register_btn.clicked.connect(self.do_register)
@@ -389,15 +559,23 @@ class RegisterDialog(QtWidgets.QDialog):
         self._pending_emb = None
         self._recording = False
         self.RECORD_SECONDS = 5
-        self.RECORD_TARGET = 12  # 5초 동안 모을 목표 프레임 수
+        self.RECORD_TARGET = (
+            12  # 5초 동안 모을 목표 프레임 수
+        )
 
     def _on_name_changed(self, text):
         """이름이 있어야 등록 방법 버튼이 활성화된다."""
         has = bool(text.strip())
         # 카메라/녹화 세션이 진행 중이면 방법 버튼 상태를 건드리지 않는다
-        session_active = self._cap is not None or self._recording
+        session_active = (
+            self._cap is not None or self._recording
+        )
         if not session_active:
-            for b in (self.capture_mode_btn, self.record_mode_btn, self.video_btn):
+            for b in (
+                self.capture_mode_btn,
+                self.record_mode_btn,
+                self.video_btn,
+            ):
                 b.setEnabled(has)
         if not has:
             self.capture_btn.setEnabled(False)
@@ -420,7 +598,10 @@ class RegisterDialog(QtWidgets.QDialog):
         QtWidgets.QApplication.processEvents()
         # 가상캠 등이 멈추게 하는 것을 막기 위해 timeout 적용해 안전하게 연다
         from app.face_engine import open_camera_safe
-        self._cap = open_camera_safe(self.camera_index, timeout=3.0)
+
+        self._cap = open_camera_safe(
+            self.camera_index, timeout=3.0
+        )
         if self._cap is None:
             self.status.setText(
                 "카메라를 열 수 없습니다. 설정 탭에서 다른 카메라를 선택하세요."
@@ -441,7 +622,9 @@ class RegisterDialog(QtWidgets.QDialog):
         self.capture_btn.setText("현재 얼굴 캡처 (0/10)")
         self.record_mode_btn.setEnabled(False)
         self.video_btn.setEnabled(False)
-        self.status.setText("거울 미리보기 — 얼굴을 맞추고 ‘현재 얼굴 캡처’를 누르세요.")
+        self.status.setText(
+            "거울 미리보기 — 얼굴을 맞추고 ‘현재 얼굴 캡처’를 누르세요."
+        )
 
     def start_record_mode(self):
         """영상으로 등록: 약 5초간 자동 수집."""
@@ -453,17 +636,24 @@ class RegisterDialog(QtWidgets.QDialog):
         self.video_btn.setEnabled(False)
         self._recording = True
         self._record_start = None  # 첫 프레임에서 설정
-        self.status.setText(f"{self.RECORD_SECONDS}초 자동 수집 시작 — 고개를 천천히 움직이세요.")
+        self.status.setText(
+            f"{self.RECORD_SECONDS}초 자동 수집 시작 — 고개를 천천히 움직이세요."
+        )
 
     def _cam_tick(self):
-        ret, frame = self._cap.read()
-        if not ret:
+        try:
+            ret, frame = self._cap.read()
+        except Exception:
+            ret, frame = False, None
+        if not ret or frame is None:
             return
         self._last_frame = frame
         mirror = cv2.flip(frame, 1)
         pix = bgr_to_qpixmap(mirror).scaled(
-            self.preview.width(), self.preview.height(),
-            QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation,
+            self.preview.width(),
+            self.preview.height(),
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
         )
         self.preview.setPixmap(pix)
 
@@ -471,15 +661,27 @@ class RegisterDialog(QtWidgets.QDialog):
             return
         # 녹화 모드: 일정 간격으로 임베딩 수집
         import time as _t
+
         now = _t.time()
         if self._record_start is None:
             self._record_start = now
             self._last_grab = 0
         elapsed = now - self._record_start
         # 목표 프레임을 5초에 고르게 분배
-        interval = self.RECORD_SECONDS / max(1, self.RECORD_TARGET)
-        if now - self._last_grab >= interval and len(self._cam_embs) < self.RECORD_TARGET:
-            emb = self.engine.embed_face(frame)
+        interval = self.RECORD_SECONDS / max(
+            1, self.RECORD_TARGET
+        )
+        if (
+            now - self._last_grab >= interval
+            and len(self._cam_embs) < self.RECORD_TARGET
+        ):
+            try:
+                emb = self.engine.embed_face(frame)
+            except Exception as e:
+                emb = None
+                self.status.setText(
+                    f"분석 오류 (계속 수집 중): {e}"
+                )
             self._last_grab = now
             if emb is not None:
                 self._cam_embs.append(emb)
@@ -493,36 +695,64 @@ class RegisterDialog(QtWidgets.QDialog):
     def _finish_record(self):
         n = len(self._cam_embs)
         if n < 3:
-            self.status.setText(f"수집된 얼굴이 부족합니다 ({n}장). 다시 시도하세요.")
+            self.status.setText(
+                f"수집된 얼굴이 부족합니다 ({n}장). 다시 시도하세요."
+            )
             # 버튼 복구
             self._on_name_changed(self.name_edit.text())
             self.capture_mode_btn.setEnabled(True)
             self.record_mode_btn.setEnabled(True)
             return
-        self._pending_emb = average_embeddings(self._cam_embs)
+        self._pending_emb = average_embeddings(
+            self._cam_embs
+        )
         self.register_btn.setEnabled(True)
-        self.status.setText(f"{n}장 수집 완료 — ‘등록 완료’를 누르세요.")
+        self.status.setText(
+            f"{n}장 수집 완료 — ‘등록 완료’를 누르세요."
+        )
 
     def capture_one(self):
         if not hasattr(self, "_last_frame"):
             return
         self.status.setText("얼굴 분석 중...")
         QtWidgets.QApplication.processEvents()
-        emb = self.engine.embed_face(self._last_frame)
+        try:
+            emb = self.engine.embed_face(self._last_frame)
+        except Exception as e:
+            self.status.setText(
+                f"얼굴 분석 중 오류가 발생했습니다: {e}"
+            )
+            return
         if emb is None:
-            self.status.setText("얼굴이 감지되지 않았습니다. 다시 시도하세요.")
+            if not self.engine.is_loaded():
+                err = self.engine.get_load_error()
+                self.status.setText(
+                    f"AI 모델을 사용할 수 없습니다. ({err})"
+                )
+            else:
+                self.status.setText(
+                    "얼굴이 감지되지 않았습니다. 다시 시도하세요."
+                )
             return
         self._cam_embs.append(emb)
         n = len(self._cam_embs)
         self.capture_btn.setText(f"현재 얼굴 캡처 ({n}/10)")
-        self.status.setText(f"{n}장 캡처됨" + (" — 등록 가능" if n >= 3 else ""))
+        self.status.setText(
+            f"{n}장 캡처됨"
+            + (" — 등록 가능" if n >= 3 else "")
+        )
         if n >= 3:
-            self._pending_emb = average_embeddings(self._cam_embs)
+            self._pending_emb = average_embeddings(
+                self._cam_embs
+            )
             self.register_btn.setEnabled(True)
 
     def pick_video(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "동영상 선택", "", "동영상 (*.mp4 *.avi *.mov *.mkv)"
+            self,
+            "동영상 선택",
+            "",
+            "동영상 (*.mp4 *.avi *.mov *.mkv)",
         )
         if not path:
             return
@@ -534,7 +764,9 @@ class RegisterDialog(QtWidgets.QDialog):
         self.vt = VideoRegisterThread(self.engine, path)
         self.vt.status.connect(self.status.setText)
         self.vt.progress.connect(
-            lambda c, t: self.status.setText(f"임베딩 추출 {c}/{t}")
+            lambda c, t: self.status.setText(
+                f"임베딩 추출 {c}/{t}"
+            )
         )
         self.vt.done.connect(self._video_done)
         self.vt.start()
@@ -546,19 +778,29 @@ class RegisterDialog(QtWidgets.QDialog):
             return
         self._pending_emb = emb_bytes
         self.register_btn.setEnabled(True)
-        self.preview.setText("처리 완료 — '등록 완료'를 누르세요.")
+        self.preview.setText(
+            "처리 완료 — '등록 완료'를 누르세요."
+        )
 
     def do_register(self):
         name = self.name_edit.text().strip()
         if not name:
-            QtWidgets.QMessageBox.warning(self, "확인", "이름을 입력하세요.")
+            QtWidgets.QMessageBox.warning(
+                self, "확인", "이름을 입력하세요."
+            )
             return
         if self._pending_emb is None:
-            QtWidgets.QMessageBox.warning(self, "확인", "먼저 얼굴을 캡처/처리하세요.")
+            QtWidgets.QMessageBox.warning(
+                self, "확인", "먼저 얼굴을 캡처/처리하세요."
+            )
             return
-        emp_id = self.db.add_employee(name, self._pending_emb)
+        emp_id = self.db.add_employee(
+            name, self._pending_emb
+        )
         QtWidgets.QMessageBox.information(
-            self, "등록 완료", f"{name} ({emp_id}) 등록되었습니다."
+            self,
+            "등록 완료",
+            f"{name} ({emp_id}) 등록되었습니다.",
         )
         self.accept()
 
@@ -569,8 +811,11 @@ class RegisterDialog(QtWidgets.QDialog):
             self._cap.release()
         super().closeEvent(e)
 
+
 class ActionDialog(QtWidgets.QDialog):
-    def __init__(self, name: str, actions: list, parent=None):
+    def __init__(
+        self, name: str, actions: list, parent=None
+    ):
         super().__init__(parent)
         self.chosen = None
         self.setWindowTitle("동작 선택")
@@ -578,16 +823,22 @@ class ActionDialog(QtWidgets.QDialog):
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(10)
-        title = QtWidgets.QLabel(f"<h2>{name}</h2>님, 동작을 선택하세요")
+        title = QtWidgets.QLabel(
+            f"<h2>{name}</h2>님, 동작을 선택하세요"
+        )
         title.setAlignment(QtCore.Qt.AlignCenter)
         v.addWidget(title)
 
         for act in actions:
             label = ACTION_LABELS.get(act, act)
-            b = QtWidgets.QPushButton(f"[{ACTION_KEYS[act]}] {label}")
+            b = QtWidgets.QPushButton(
+                f"[{ACTION_KEYS[act]}] {label}"
+            )
             b.setProperty("accent", True)
             b.setMinimumHeight(46)
-            b.clicked.connect(lambda _, a=act: self._choose(a))
+            b.clicked.connect(
+                lambda _, a=act: self._choose(a)
+            )
             v.addWidget(b)
         cancel = QtWidgets.QPushButton("[ESC] 취소")
         cancel.setMinimumHeight(38)
@@ -610,6 +861,7 @@ class ActionDialog(QtWidgets.QDialog):
         if e.key() == QtCore.Qt.Key_Escape:
             self.reject()
 
+
 class SortKeyItem(QtWidgets.QTableWidgetItem):
     """정렬 시 표시 텍스트가 아니라 UserRole 키로 비교하는 셀.
 
@@ -624,6 +876,7 @@ class SortKeyItem(QtWidgets.QTableWidgetItem):
             return a < b
         return super().__lt__(other)
 
+
 class ProportionalTable(QtWidgets.QTableWidget):
     """컬럼 폭을 글자수 비율로 유지하는 표.
 
@@ -634,7 +887,9 @@ class ProportionalTable(QtWidgets.QTableWidget):
     def __init__(self, rows, cols, parent=None):
         super().__init__(rows, cols, parent)
         self._ratios = []
-        self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+        self.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.Fixed
+        )
 
     def set_ratios(self, ratios):
         self._ratios = list(ratios)
@@ -652,24 +907,36 @@ class ProportionalTable(QtWidgets.QTableWidget):
             wpx = int(vw * r / total)
             self.setColumnWidth(i, wpx)
             used += wpx
-        self.setColumnWidth(len(self._ratios) - 1, max(40, vw - used))
+        self.setColumnWidth(
+            len(self._ratios) - 1, max(40, vw - used)
+        )
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._apply_ratios()
 
+
 class AutoToast(QtWidgets.QDialog):
     """자동 출퇴근 완료를 큰 글씨로 띄우고 일정 시간 후 자동으로 닫히는 팝업."""
 
-    def __init__(self, name: str, action_label: str, seconds: float, parent=None):
+    def __init__(
+        self,
+        name: str,
+        action_label: str,
+        seconds: float,
+        parent=None,
+    ):
         super().__init__(parent)
         self.setWindowFlags(
-            QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint
+            QtCore.Qt.Dialog
+            | QtCore.Qt.FramelessWindowHint
             | QtCore.Qt.WindowStaysOnTopHint
         )
         self.setModal(False)
         # 창 자체는 투명 — 둥근 모서리가 밖으로 비치지 않게
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setAttribute(
+            QtCore.Qt.WA_TranslucentBackground, True
+        )
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -682,7 +949,9 @@ class AutoToast(QtWidgets.QDialog):
         )
         inner = QtWidgets.QVBoxLayout(self.card)
         inner.setContentsMargins(48, 34, 48, 34)
-        text = QtWidgets.QLabel(f"{name}\n{action_label} 완료")
+        text = QtWidgets.QLabel(
+            f"{name}\n{action_label} 완료"
+        )
         text.setAlignment(QtCore.Qt.AlignCenter)
         text.setStyleSheet(
             "font-size: 34px; font-weight: 800; color: #16a34a; border: none;"
@@ -691,7 +960,9 @@ class AutoToast(QtWidgets.QDialog):
         outer.addWidget(self.card)
 
         # seconds 후 자동 닫힘
-        QtCore.QTimer.singleShot(int(seconds * 1000), self.close)
+        QtCore.QTimer.singleShot(
+            int(seconds * 1000), self.close
+        )
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -701,11 +972,14 @@ class AutoToast(QtWidgets.QDialog):
             self.adjustSize()
             self.move(pg.center() - self.rect().center())
 
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.cfg = appcfg.load_config()
-        self.engine = FaceEngine(use_fp16=self.cfg.get("use_fp16", True))
+        self.engine = FaceEngine(
+            use_fp16=self.cfg.get("use_fp16", True)
+        )
         self.db = None
         self.rec_thread = None
         self.cam_scan_thread = None
@@ -721,7 +995,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _start_camera_scan(self):
         """앱 시작 직후 로딩창을 띄우고 카메라를 검색해 콤보를 채운다."""
         # 창이 먼저 그려진 뒤 로딩창이 뜨도록 약간 지연
-        QtCore.QTimer.singleShot(150, lambda: self._run_camera_scan(show_warning_if_none=False))
+        QtCore.QTimer.singleShot(
+            150,
+            lambda: self._run_camera_scan(
+                show_warning_if_none=False
+            ),
+        )
 
     def _on_cameras_found(self, found):
         """카메라 검색 결과로 콤보를 갱신 (현재 설정값은 유지). 로딩창을 닫는다."""
@@ -740,16 +1019,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.cam_combo.addItem(f"카메라 {i}", i)
             idx = found.index(cur) if cur in found else 0
             self.cam_combo.setCurrentIndex(idx)
-            self.statusBar().showMessage(f"카메라 {len(found)}개 발견: {found}")
+            self.statusBar().showMessage(
+                f"카메라 {len(found)}개 발견: {found}"
+            )
         else:
             self.cam_combo.addItem(f"카메라 {cur}", cur)
-            self.statusBar().showMessage("카메라 검색: 발견된 카메라 없음")
+            self.statusBar().showMessage(
+                "카메라 검색: 발견된 카메라 없음"
+            )
         self.cam_combo.blockSignals(False)
 
         manual = getattr(self, "_scan_warn", False)
         if found:
             # 선택된 카메라를 한 번 더 테스트해 해상도까지 확인 (수동/자동 공통)
             from app.face_engine import test_camera
+
             sel = self.cam_combo.currentData()
             ok, res = test_camera(sel, timeout=3.0)
             if ok:
@@ -758,7 +1042,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 if manual:
                     QtWidgets.QMessageBox.information(
-                        self, "카메라 검색 완료",
+                        self,
+                        "카메라 검색 완료",
                         f"사용 가능한 카메라 {len(found)}개: {found}\n\n"
                         f"선택된 카메라 {sel} 정상 동작 (해상도 {res[0]} x {res[1]}).",
                     )
@@ -768,15 +1053,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 if manual:
                     QtWidgets.QMessageBox.warning(
-                        self, "카메라 검색 완료",
+                        self,
+                        "카메라 검색 완료",
                         f"카메라 {found} 를 찾았으나, 선택된 카메라 {sel} 테스트에 실패했습니다.\n"
                         "목록에서 다른 카메라를 선택해 보세요.",
                     )
         else:
-            self.statusBar().showMessage("카메라 검색: 발견된 카메라 없음")
+            self.statusBar().showMessage(
+                "카메라 검색: 발견된 카메라 없음"
+            )
             if manual:
                 QtWidgets.QMessageBox.warning(
-                    self, "카메라 검색",
+                    self,
+                    "카메라 검색",
                     "사용 가능한 카메라를 찾지 못했습니다.\n"
                     "카메라 연결 상태를 확인하거나, 다른 앱이 사용 중인지 확인하세요.",
                 )
@@ -785,35 +1074,45 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_db(self):
         try:
             self.db = AttendanceDB(
-                self.cfg["db_path"], self.cfg.get("attendance_mode", "full")
+                self.cfg["db_path"],
+                self.cfg.get("attendance_mode", "full"),
             )
         except Exception as e:
             QtWidgets.QMessageBox.critical(
-                self, "DB 오류", f"DB를 열 수 없습니다:\n{e}\n설정에서 경로를 변경하세요."
+                self,
+                "DB 오류",
+                f"DB를 열 수 없습니다:\n{e}\n설정에서 경로를 변경하세요.",
             )
 
     def _build(self):
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
-        self.tabs.addTab(self._tab_recognize(), "실시간 인식")
+        self.tabs.addTab(
+            self._tab_recognize(), "실시간 인식"
+        )
         self.tabs.addTab(self._tab_employees(), "직원 관리")
         self.tabs.addTab(self._tab_logs(), "근태 기록")
         self.tabs.addTab(self._tab_settings(), "설정")
-        self.statusBar().showMessage(f"DB: {self.cfg['db_path']}")
+        self.statusBar().showMessage(
+            f"DB: {self.cfg['db_path']}"
+        )
 
     def _tab_recognize(self):
         w = QtWidgets.QWidget()
         v = QtWidgets.QVBoxLayout(w)
         v.setContentsMargins(18, 18, 18, 18)
         v.setSpacing(12)
-        self.cam_view = QtWidgets.QLabel("‘인식 시작’을 누르세요")
+        self.cam_view = QtWidgets.QLabel(
+            "‘인식 시작’을 누르세요"
+        )
         self.cam_view.setAlignment(QtCore.Qt.AlignCenter)
         self.cam_view.setMinimumHeight(360)
         self.cam_view.setProperty("viewport", True)
         # 큰 화면에서 카메라 영역이 과도하게 늘어나지 않도록 최대 폭 제한 + 중앙 정렬
         self.cam_view.setMaximumWidth(1100)
         self.cam_view.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
         )
         cam_row = QtWidgets.QHBoxLayout()
         cam_row.addStretch(1)
@@ -833,9 +1132,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_btn.setMinimumHeight(44)
         self.start_btn.setMinimumWidth(220)
         self.start_btn.setSizePolicy(
-            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
+            QtWidgets.QSizePolicy.Fixed,
+            QtWidgets.QSizePolicy.Fixed,
         )
-        self.start_btn.clicked.connect(self.toggle_recognize)
+        self.start_btn.clicked.connect(
+            self.toggle_recognize
+        )
         h.addWidget(self.start_btn)
         h.addStretch(1)
         v.addLayout(h)
@@ -851,10 +1153,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.db is None:
             return
         # 자동 모드는 2단계(출/퇴)에서만 — 4단계면 강제로 끔
-        auto = self.cfg.get("auto_mode", False) and \
-            self.cfg.get("attendance_mode", "full") == "simple"
+        auto = (
+            self.cfg.get("auto_mode", False)
+            and self.cfg.get("attendance_mode", "full")
+            == "simple"
+        )
         self.rec_thread = RecognizeThread(
-            self.engine, self.db,
+            self.engine,
+            self.db,
             self.cfg.get("sim_threshold", 0.85),
             self.cfg.get("vote_n", 5),
             self.cfg.get("camera_index", 0),
@@ -863,33 +1169,52 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cfg.get("dwell_sec", 2.0),
             self.cfg.get("auto_preview", True),
         )
-        self.rec_thread.frame_ready.connect(self._show_frame)
-        self.rec_thread.recognized.connect(self._on_recognized)
-        self.rec_thread.auto_recognized.connect(self._on_auto_recognized)
-        self.rec_thread.status.connect(self.rec_status.setText)
+        self.rec_thread.frame_ready.connect(
+            self._show_frame
+        )
+        self.rec_thread.recognized.connect(
+            self._on_recognized
+        )
+        self.rec_thread.auto_recognized.connect(
+            self._on_auto_recognized
+        )
+        self.rec_thread.status.connect(
+            self.rec_status.setText
+        )
         self.rec_thread.start()
         self.start_btn.setText("인식 정지")
 
     def _show_frame(self, frame):
         mirror = cv2.flip(frame, 1)
         pix = bgr_to_qpixmap(mirror).scaled(
-            self.cam_view.width(), self.cam_view.height(),
-            QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation,
+            self.cam_view.width(),
+            self.cam_view.height(),
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
         )
         self.cam_view.setPixmap(pix)
 
     def _on_recognized(self, emp_id, name, sim):
         actions = self.db.get_available_actions(emp_id)
         if not actions:
-            self.rec_status.setText(f"{name}: 당일 퇴근 완료 — 추가 동작 없음")
+            self.rec_status.setText(
+                f"{name}: 당일 퇴근 완료 — 추가 동작 없음"
+            )
             if self.rec_thread:
                 self.rec_thread.resume()
             return
         dlg = ActionDialog(name, actions, self)
-        if dlg.exec_() == QtWidgets.QDialog.Accepted and dlg.chosen:
+        if (
+            dlg.exec_() == QtWidgets.QDialog.Accepted
+            and dlg.chosen
+        ):
             self.db.log_action(emp_id, dlg.chosen)
-            label = ACTION_LABELS.get(dlg.chosen, dlg.chosen)
-            self.rec_status.setText(f"{name}: {label} 완료 (유사도 {sim:.2f})")
+            label = ACTION_LABELS.get(
+                dlg.chosen, dlg.chosen
+            )
+            self.rec_status.setText(
+                f"{name}: {label} 완료 (유사도 {sim:.2f})"
+            )
             self.refresh_logs()
             if self.cfg.get("tts_enabled", False):
                 tts.speak_async(f"{name}님 {label}")
@@ -902,7 +1227,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """자동 모드: 동작 선택창 없이 가능한 동작을 바로 기록."""
         actions = self.db.get_available_actions(emp_id)
         if not actions:
-            self.rec_status.setText(f"{name}: 당일 퇴근 완료 — 추가 동작 없음")
+            self.rec_status.setText(
+                f"{name}: 당일 퇴근 완료 — 추가 동작 없음"
+            )
             if self.rec_thread:
                 self.rec_thread.resume()
             return
@@ -911,11 +1238,18 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             self.db.log_action(emp_id, action)
             label = ACTION_LABELS.get(action, action)
-            self.rec_status.setText(f"{name}: {label} 완료 (자동)")
+            self.rec_status.setText(
+                f"{name}: {label} 완료 (자동)"
+            )
             self.refresh_logs()
             # 완료 팝업 (옵션)
             if self.cfg.get("auto_popup", True):
-                toast = AutoToast(name, label, self.cfg.get("popup_sec", 2.0), self)
+                toast = AutoToast(
+                    name,
+                    label,
+                    self.cfg.get("popup_sec", 2.0),
+                    self,
+                )
                 toast.show()
             # 음성 안내 (옵션)
             if self.cfg.get("tts_enabled", False):
@@ -931,12 +1265,20 @@ class MainWindow(QtWidgets.QMainWindow):
         table.setAlternatingRowColors(True)
         table.setSortingEnabled(True)
         table.setShowGrid(False)
-        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SingleSelection
+        )
+        table.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers
+        )
         table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(38)
-        table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        table.setHorizontalScrollMode(
+            QtWidgets.QAbstractItemView.ScrollPerPixel
+        )
         table.horizontalHeader().setHighlightSections(False)
 
     def _tab_employees(self):
@@ -946,9 +1288,13 @@ class MainWindow(QtWidgets.QMainWindow):
         v.setSpacing(12)
         top = QtWidgets.QHBoxLayout()
         self.emp_search = QtWidgets.QLineEdit()
-        self.emp_search.setPlaceholderText("이름 또는 ID 검색")
+        self.emp_search.setPlaceholderText(
+            "이름 또는 ID 검색"
+        )
         self.emp_search.setMinimumHeight(34)
-        self.emp_search.textChanged.connect(self.refresh_employees)
+        self.emp_search.textChanged.connect(
+            self.refresh_employees
+        )
         top.addWidget(self.emp_search, 1)
         add_btn = QtWidgets.QPushButton("신규 등록")
         add_btn.setProperty("accent", True)
@@ -963,7 +1309,9 @@ class MainWindow(QtWidgets.QMainWindow):
         top.addWidget(del_btn)
         v.addLayout(top)
         self.emp_table = ProportionalTable(0, 3)
-        self.emp_table.setHorizontalHeaderLabels(["ID", "이름", "등록일시"])
+        self.emp_table.setHorizontalHeaderLabels(
+            ["ID", "이름", "등록일시"]
+        )
         self._style_table(self.emp_table)
         # 글자수 비율 — ID:2, 이름:2, 등록일시:6
         self.emp_table.set_ratios([2, 2, 6])
@@ -979,15 +1327,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.emp_table.setSortingEnabled(False)
         self.emp_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
-            self._set_cell(self.emp_table, i, 0, r["emp_id"], center=True)
-            self._set_cell(self.emp_table, i, 1, r["name"], center=True)
-            self._set_cell(self.emp_table, i, 2, r["created_at"], center=True)
+            self._set_cell(
+                self.emp_table,
+                i,
+                0,
+                r["emp_id"],
+                center=True,
+            )
+            self._set_cell(
+                self.emp_table, i, 1, r["name"], center=True
+            )
+            self._set_cell(
+                self.emp_table,
+                i,
+                2,
+                r["created_at"],
+                center=True,
+            )
         self.emp_table.setSortingEnabled(True)
 
     @staticmethod
-    def _set_cell(table, row, col, text, center=False, color=None):
+    def _set_cell(
+        table, row, col, text, center=False, color=None
+    ):
         """셀 생성 + 정렬/색상 옵션."""
-        item = QtWidgets.QTableWidgetItem(str(text) if text is not None else "")
+        item = QtWidgets.QTableWidgetItem(
+            str(text) if text is not None else ""
+        )
         if center:
             item.setTextAlignment(QtCore.Qt.AlignCenter)
         if color:
@@ -997,10 +1363,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def open_register(self):
         if self.db is None:
             return
-        dlg = RegisterDialog(self.engine, self.db, self, self.cfg.get("camera_index", 0))
+        dlg = RegisterDialog(
+            self.engine,
+            self.db,
+            self,
+            self.cfg.get("camera_index", 0),
+        )
         if dlg.exec_() == QtWidgets.QDialog.Accepted:
             self.refresh_employees()
-            if self.rec_thread and self.rec_thread.isRunning():
+            if (
+                self.rec_thread
+                and self.rec_thread.isRunning()
+            ):
                 self.rec_thread.reload_embeddings()
 
     def delete_employee(self):
@@ -1010,13 +1384,17 @@ class MainWindow(QtWidgets.QMainWindow):
         emp_id = self.emp_table.item(row, 0).text()
         name = self.emp_table.item(row, 1).text()
         ok = QtWidgets.QMessageBox.question(
-            self, "삭제 확인",
+            self,
+            "삭제 확인",
             f"{name} ({emp_id}) 직원과 모든 근태 기록을 삭제할까요?",
         )
         if ok == QtWidgets.QMessageBox.Yes:
             self.db.delete_employee(emp_id)
             self.refresh_employees()
-            if self.rec_thread and self.rec_thread.isRunning():
+            if (
+                self.rec_thread
+                and self.rec_thread.isRunning()
+            ):
                 self.rec_thread.reload_embeddings()
 
     def _tab_logs(self):
@@ -1028,16 +1406,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_search = QtWidgets.QLineEdit()
         self.log_search.setPlaceholderText("이름/ID")
         self.log_search.setMinimumHeight(34)
-        self.log_search.returnPressed.connect(self.refresh_logs)
+        self.log_search.returnPressed.connect(
+            self.refresh_logs
+        )
         top.addWidget(self.log_search, 2)
 
         today = QtCore.QDate.currentDate()
-        first_day = QtCore.QDate(today.year(), today.month(), 1)
+        first_day = QtCore.QDate(
+            today.year(), today.month(), 1
+        )
 
         self.date_from = QtWidgets.QDateEdit()
         self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy-MM-dd")
-        self.date_from.setDate(first_day)        # 기본: 이번 달 1일
+        self.date_from.setDate(
+            first_day
+        )  # 기본: 이번 달 1일
         self.date_from.setMinimumHeight(34)
         top.addWidget(QtWidgets.QLabel("시작"))
         top.addWidget(self.date_from, 1)
@@ -1045,7 +1429,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.date_to = QtWidgets.QDateEdit()
         self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy-MM-dd")
-        self.date_to.setDate(today)              # 기본: 오늘
+        self.date_to.setDate(today)  # 기본: 오늘
         self.date_to.setMinimumHeight(34)
         top.addWidget(QtWidgets.QLabel("종료"))
         top.addWidget(self.date_to, 1)
@@ -1085,49 +1469,78 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         rows = self._current_log_rows()
         status_color = {
-            "출근": "#16a34a", "외출": "#d97706",
-            "복귀": "#2563eb", "퇴근": "#6b7280",
+            "출근": "#16a34a",
+            "외출": "#d97706",
+            "복귀": "#2563eb",
+            "퇴근": "#6b7280",
         }
         self.log_table.setSortingEnabled(False)
         self.log_table.setRowCount(len(rows))
         for i, r in enumerate(rows):
-            emp_id, name, date_, time_, state = (list(r) + [""] * 5)[:5]
-            self._set_cell(self.log_table, i, 0, emp_id, center=True)
-            self._set_cell(self.log_table, i, 1, name, center=True)
+            emp_id, name, date_, time_, state = (
+                list(r) + [""] * 5
+            )[:5]
+            self._set_cell(
+                self.log_table, i, 0, emp_id, center=True
+            )
+            self._set_cell(
+                self.log_table, i, 1, name, center=True
+            )
             # 날짜 셀에 "날짜 시각" 정렬키를 심어, 날짜 기준 정렬 시 시각까지 반영
             date_item = SortKeyItem(str(date_))
-            date_item.setTextAlignment(QtCore.Qt.AlignCenter)
-            date_item.setData(QtCore.Qt.UserRole, f"{date_} {time_}")
+            date_item.setTextAlignment(
+                QtCore.Qt.AlignCenter
+            )
+            date_item.setData(
+                QtCore.Qt.UserRole, f"{date_} {time_}"
+            )
             self.log_table.setItem(i, 2, date_item)
-            self._set_cell(self.log_table, i, 3, time_, center=True)
             self._set_cell(
-                self.log_table, i, 4, state, center=True,
+                self.log_table, i, 3, time_, center=True
+            )
+            self._set_cell(
+                self.log_table,
+                i,
+                4,
+                state,
+                center=True,
                 color=status_color.get(state),
             )
         self.log_table.setSortingEnabled(True)
         # 기본 정렬: 날짜(+시각) 최신순. 헤더 화살표도 날짜 컬럼에 표시.
-        self.log_table.sortByColumn(2, QtCore.Qt.DescendingOrder)
+        self.log_table.sortByColumn(
+            2, QtCore.Qt.DescendingOrder
+        )
         if not rows:
             self.statusBar().showMessage("조회 결과 없음")
         else:
-            self.statusBar().showMessage(f"근태 기록 {len(rows)}건")
+            self.statusBar().showMessage(
+                f"근태 기록 {len(rows)}건"
+            )
 
     def export_logs(self):
         if self.db is None:
             return
         rows = self._current_log_rows()
         if not rows:
-            QtWidgets.QMessageBox.information(self, "추출", "추출할 기록이 없습니다.")
+            QtWidgets.QMessageBox.information(
+                self, "추출", "추출할 기록이 없습니다."
+            )
             return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "엑셀로 저장", "근태기록.xlsx", "Excel (*.xlsx)"
+            self,
+            "엑셀로 저장",
+            "근태기록.xlsx",
+            "Excel (*.xlsx)",
         )
         if not path:
             return
         if not path.endswith(".xlsx"):
             path += ".xlsx"
         self.db.export_logs_xlsx(path, rows)
-        QtWidgets.QMessageBox.information(self, "추출 완료", f"저장됨:\n{path}")
+        QtWidgets.QMessageBox.information(
+            self, "추출 완료", f"저장됨:\n{path}"
+        )
 
     def _tab_settings(self):
         outer = QtWidgets.QWidget()
@@ -1143,13 +1556,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def section_label(text):
             lb = QtWidgets.QLabel(text)
-            lb.setStyleSheet("color:#374151; font-weight:600;")
+            lb.setStyleSheet(
+                "color:#374151; font-weight:600;"
+            )
             return lb
 
         # DB 경로 (라벨 위 / 입력칸 아래)
         col.addWidget(section_label("DB 경로"))
         path_row = QtWidgets.QHBoxLayout()
-        self.db_path_edit = QtWidgets.QLineEdit(self.cfg["db_path"])
+        self.db_path_edit = QtWidgets.QLineEdit(
+            self.cfg["db_path"]
+        )
         self.db_path_edit.setMinimumHeight(34)
         path_row.addWidget(self.db_path_edit, 1)
         browse = QtWidgets.QPushButton("찾아보기")
@@ -1166,8 +1583,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.thr_spin = QtWidgets.QDoubleSpinBox()
         self.thr_spin.setRange(0.30, 0.95)
         self.thr_spin.setSingleStep(0.01)
-        self.thr_spin.setValue(self.cfg.get("sim_threshold", 0.85))
-        self.thr_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.thr_spin.setValue(
+            self.cfg.get("sim_threshold", 0.85)
+        )
+        self.thr_spin.setButtonSymbols(
+            QtWidgets.QAbstractSpinBox.NoButtons
+        )
         self.thr_spin.setMinimumHeight(34)
         self.thr_spin.setAlignment(QtCore.Qt.AlignCenter)
         thr_box.addWidget(self.thr_spin)
@@ -1178,7 +1599,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.vote_spin = QtWidgets.QSpinBox()
         self.vote_spin.setRange(1, 15)
         self.vote_spin.setValue(self.cfg.get("vote_n", 5))
-        self.vote_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.vote_spin.setButtonSymbols(
+            QtWidgets.QAbstractSpinBox.NoButtons
+        )
         self.vote_spin.setMinimumHeight(34)
         self.vote_spin.setAlignment(QtCore.Qt.AlignCenter)
         vote_box.addWidget(self.vote_spin)
@@ -1189,8 +1612,10 @@ class MainWindow(QtWidgets.QMainWindow):
         col.addWidget(section_label("카메라"))
         cam_row = QtWidgets.QHBoxLayout()
         self.cam_combo = QtWidgets.QComboBox()
-        self.cam_combo.addItem(f"카메라 {self.cfg.get('camera_index', 0)}",
-                               self.cfg.get("camera_index", 0))
+        self.cam_combo.addItem(
+            f"카메라 {self.cfg.get('camera_index', 0)}",
+            self.cfg.get("camera_index", 0),
+        )
         self.cam_combo.setMinimumHeight(34)
         cam_row.addWidget(self.cam_combo, 1)
         scan_btn = QtWidgets.QPushButton("카메라 검색")
@@ -1207,27 +1632,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mode_combo = QtWidgets.QComboBox()
         self.mode_combo.setMinimumHeight(34)
         # data = (attendance_mode, auto_mode)
-        self.mode_combo.addItem("출근 / 퇴근 (수동)", ("simple", False))
-        self.mode_combo.addItem("출근 / 외출 / 복귀 / 퇴근 (수동)", ("full", False))
-        self.mode_combo.addItem("출근 / 퇴근 (자동 — 카메라 앞에 서면 자동 처리)",
-                                ("simple", True))
+        self.mode_combo.addItem(
+            "출근 / 퇴근 (수동)", ("simple", False)
+        )
+        self.mode_combo.addItem(
+            "출근 / 외출 / 복귀 / 퇴근 (수동)",
+            ("full", False),
+        )
+        self.mode_combo.addItem(
+            "출근 / 퇴근 (자동 — 카메라 앞에 서면 자동 처리)",
+            ("simple", True),
+        )
         cur_mode = self.cfg.get("attendance_mode", "full")
         cur_auto = self.cfg.get("auto_mode", False)
         if cur_auto and cur_mode == "simple":
             self.mode_combo.setCurrentIndex(2)
         else:
-            self.mode_combo.setCurrentIndex(0 if cur_mode == "simple" else 1)
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+            self.mode_combo.setCurrentIndex(
+                0 if cur_mode == "simple" else 1
+            )
+        self.mode_combo.currentIndexChanged.connect(
+            self._on_mode_changed
+        )
         col.addWidget(self.mode_combo)
 
         # 자동 모드 전용 옵션(체류 시간 / 예정 동작 미리보기) — 자동 선택 시에만 표시
         dwell_row = QtWidgets.QHBoxLayout()
-        dwell_row.addWidget(QtWidgets.QLabel("자동 처리까지 체류 시간(초):"))
+        dwell_row.addWidget(
+            QtWidgets.QLabel("자동 처리까지 체류 시간(초):")
+        )
         self.dwell_spin = QtWidgets.QDoubleSpinBox()
         self.dwell_spin.setRange(1.0, 10.0)
         self.dwell_spin.setSingleStep(0.5)
-        self.dwell_spin.setValue(self.cfg.get("dwell_sec", 2.0))
-        self.dwell_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.dwell_spin.setValue(
+            self.cfg.get("dwell_sec", 2.0)
+        )
+        self.dwell_spin.setButtonSymbols(
+            QtWidgets.QAbstractSpinBox.NoButtons
+        )
         self.dwell_spin.setFixedWidth(90)
         self.dwell_spin.setMinimumHeight(30)
         self.dwell_spin.setAlignment(QtCore.Qt.AlignCenter)
@@ -1238,23 +1680,35 @@ class MainWindow(QtWidgets.QMainWindow):
         col.addWidget(self.dwell_widget)
 
         self.preview_chk = QtWidgets.QCheckBox(
-            "자동 처리 전 예정 동작 미리 표시 (예: \"홍길동 — 곧 [퇴근] 처리\")"
+            '자동 처리 전 예정 동작 미리 표시 (예: "홍길동 — 곧 [퇴근] 처리")'
         )
-        self.preview_chk.setChecked(self.cfg.get("auto_preview", True))
+        self.preview_chk.setChecked(
+            self.cfg.get("auto_preview", True)
+        )
         col.addWidget(self.preview_chk)
 
         # 완료 팝업
-        self.popup_chk = QtWidgets.QCheckBox("처리 완료 시 큰 팝업 표시")
-        self.popup_chk.setChecked(self.cfg.get("auto_popup", True))
+        self.popup_chk = QtWidgets.QCheckBox(
+            "처리 완료 시 큰 팝업 표시"
+        )
+        self.popup_chk.setChecked(
+            self.cfg.get("auto_popup", True)
+        )
         col.addWidget(self.popup_chk)
 
         popup_row = QtWidgets.QHBoxLayout()
-        popup_row.addWidget(QtWidgets.QLabel("팝업 표시 시간(초):"))
+        popup_row.addWidget(
+            QtWidgets.QLabel("팝업 표시 시간(초):")
+        )
         self.popup_spin = QtWidgets.QDoubleSpinBox()
         self.popup_spin.setRange(0.5, 10.0)
         self.popup_spin.setSingleStep(0.5)
-        self.popup_spin.setValue(self.cfg.get("popup_sec", 2.0))
-        self.popup_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.popup_spin.setValue(
+            self.cfg.get("popup_sec", 2.0)
+        )
+        self.popup_spin.setButtonSymbols(
+            QtWidgets.QAbstractSpinBox.NoButtons
+        )
         self.popup_spin.setFixedWidth(90)
         self.popup_spin.setMinimumHeight(30)
         self.popup_spin.setAlignment(QtCore.Qt.AlignCenter)
@@ -1267,18 +1721,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self._on_mode_changed()  # 자동 전용 옵션 표시 상태 반영
 
         # 음성 안내(TTS) — 수동/자동 모드 모두에서 동작 (항상 표시)
-        self.tts_chk = QtWidgets.QCheckBox("처리 완료 시 음성 안내 (이름+상태 읽기)")
-        self.tts_chk.setChecked(self.cfg.get("tts_enabled", False))
+        self.tts_chk = QtWidgets.QCheckBox(
+            "처리 완료 시 음성 안내 (이름+상태 읽기)"
+        )
+        self.tts_chk.setChecked(
+            self.cfg.get("tts_enabled", False)
+        )
         if not tts.is_available():
             self.tts_chk.setEnabled(False)
-            self.tts_chk.setText("음성 안내 — pyttsx3 미설치 (pip install pyttsx3)")
+            self.tts_chk.setText(
+                "음성 안내 — pyttsx3 미설치 (pip install pyttsx3)"
+            )
         col.addWidget(self.tts_chk)
 
-        self.fp16_chk = QtWidgets.QCheckBox("GPU FP16 가속 사용")
-        self.fp16_chk.setChecked(self.cfg.get("use_fp16", True))
+        self.fp16_chk = QtWidgets.QCheckBox(
+            "GPU FP16 가속 사용"
+        )
+        self.fp16_chk.setChecked(
+            self.cfg.get("use_fp16", True)
+        )
         # GPU(CUDA)가 없는 환경(CPU 빌드)에서는 의미가 없으므로 숨긴다
         try:
             import torch
+
             _has_cuda = torch.cuda.is_available()
         except Exception:
             _has_cuda = False
@@ -1288,7 +1753,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fp16_chk.setVisible(False)
 
         # 저장
-        save = QtWidgets.QPushButton("설정 저장 (DB 없으면 자동 생성)")
+        save = QtWidgets.QPushButton(
+            "설정 저장 (DB 없으면 자동 생성)"
+        )
         save.setProperty("accent", True)
         save.setMinimumHeight(42)
         save.clicked.connect(self._save_settings)
@@ -1318,15 +1785,24 @@ class MainWindow(QtWidgets.QMainWindow):
     def _run_camera_scan(self, show_warning_if_none=False):
         """카메라 검색을 스레드로 수행하고, 그동안 모달 로딩창을 표시."""
         # 이미 검색 중이면 무시
-        if getattr(self, "cam_scan_thread", None) and self.cam_scan_thread.isRunning():
+        if (
+            getattr(self, "cam_scan_thread", None)
+            and self.cam_scan_thread.isRunning()
+        ):
             return
         self._scan_warn = show_warning_if_none
-        self._scan_dialog = LoadingDialog("카메라를 검색하는 중입니다...", self)
+        self._scan_dialog = LoadingDialog(
+            "카메라를 검색하는 중입니다...", self
+        )
         self.cam_scan_thread = CameraScanThread(5)
-        self.cam_scan_thread.done.connect(self._on_cameras_found)
+        self.cam_scan_thread.done.connect(
+            self._on_cameras_found
+        )
         self.cam_scan_thread.start()
         # 안전장치: 검색이 비정상적으로 오래 걸리면 로딩창을 강제로 닫음
-        QtCore.QTimer.singleShot(15000, self._force_close_scan_dialog)
+        QtCore.QTimer.singleShot(
+            15000, self._force_close_scan_dialog
+        )
         self._scan_dialog.exec_()  # 검색이 끝나면 _on_cameras_found에서 닫음
 
     def _force_close_scan_dialog(self):
@@ -1334,34 +1810,45 @@ class MainWindow(QtWidgets.QMainWindow):
         if dlg is not None:
             dlg.accept()
             self._scan_dialog = None
-            self.statusBar().showMessage("카메라 검색 시간 초과 — 설정에서 다시 시도하세요.")
+            self.statusBar().showMessage(
+                "카메라 검색 시간 초과 — 설정에서 다시 시도하세요."
+            )
 
     def _test_camera(self):
         from app.face_engine import test_camera
 
         idx = self.cam_combo.currentData()
         if idx is None or idx < 0:
-            QtWidgets.QMessageBox.warning(self, "테스트", "먼저 카메라를 선택하세요.")
+            QtWidgets.QMessageBox.warning(
+                self, "테스트", "먼저 카메라를 선택하세요."
+            )
             return
-        self.statusBar().showMessage(f"카메라 {idx} 테스트 중...")
+        self.statusBar().showMessage(
+            f"카메라 {idx} 테스트 중..."
+        )
         QtWidgets.QApplication.processEvents()
         ok, res = test_camera(idx)
         if ok:
             QtWidgets.QMessageBox.information(
-                self, "카메라 테스트",
+                self,
+                "카메라 테스트",
                 f"카메라 {idx} 정상 동작.\n해상도: {res[0]} x {res[1]}",
             )
         else:
             QtWidgets.QMessageBox.critical(
-                self, "카메라 테스트",
+                self,
+                "카메라 테스트",
                 f"카메라 {idx} 를 열 수 없습니다.\n"
                 "다른 앱이 사용 중이거나 권한이 없는지 확인하세요.",
             )
 
     def _browse_db(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "DB 파일 선택/생성", self.cfg["db_path"],
-            "SQLite DB (*.db)", options=QtWidgets.QFileDialog.DontConfirmOverwrite,
+            self,
+            "DB 파일 선택/생성",
+            self.cfg["db_path"],
+            "SQLite DB (*.db)",
+            options=QtWidgets.QFileDialog.DontConfirmOverwrite,
         )
         if path:
             if not path.endswith(".db"):
@@ -1388,18 +1875,25 @@ class MainWindow(QtWidgets.QMainWindow):
         cam_data = self.cam_combo.currentData()
         if cam_data is not None and cam_data >= 0:
             self.cfg["camera_index"] = cam_data
-        mode, auto = self.mode_combo.currentData() or ("full", False)
+        mode, auto = self.mode_combo.currentData() or (
+            "full",
+            False,
+        )
         self.cfg["attendance_mode"] = mode
         self.cfg["auto_mode"] = auto
         self.cfg["dwell_sec"] = self.dwell_spin.value()
-        self.cfg["auto_preview"] = self.preview_chk.isChecked()
+        self.cfg["auto_preview"] = (
+            self.preview_chk.isChecked()
+        )
         self.cfg["auto_popup"] = self.popup_chk.isChecked()
         self.cfg["popup_sec"] = self.popup_spin.value()
         self.cfg["tts_enabled"] = self.tts_chk.isChecked()
         appcfg.save_config(self.cfg)
 
         # 인식 스레드가 옛 DB를 쓰는 중이면 먼저 멈춘다 (닫힌 DB 접근 방지)
-        was_running = bool(self.rec_thread and self.rec_thread.isRunning())
+        was_running = bool(
+            self.rec_thread and self.rec_thread.isRunning()
+        )
         if was_running:
             self.rec_thread.stop()
             self.rec_thread = None
@@ -1416,19 +1910,27 @@ class MainWindow(QtWidgets.QMainWindow):
             if was_running:
                 self.toggle_recognize()
             QtWidgets.QMessageBox.information(
-                self, "저장 완료", f"설정이 저장되었습니다.\nDB: {new_path}"
+                self,
+                "저장 완료",
+                f"설정이 저장되었습니다.\nDB: {new_path}",
             )
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "DB 오류", str(e))
+            QtWidgets.QMessageBox.critical(
+                self, "DB 오류", str(e)
+            )
 
     def closeEvent(self, e):
         if self.rec_thread:
             self.rec_thread.stop()
-        if self.cam_scan_thread and self.cam_scan_thread.isRunning():
+        if (
+            self.cam_scan_thread
+            and self.cam_scan_thread.isRunning()
+        ):
             self.cam_scan_thread.wait(3000)
         if self.db:
             self.db.close()
         super().closeEvent(e)
+
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
@@ -1437,6 +1939,7 @@ def main():
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()
