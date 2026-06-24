@@ -456,7 +456,18 @@ class VideoRegisterThread(QtCore.QThread):
             self.done.emit(None)
             return
 
-        cap = cv2.VideoCapture(self.video_path)
+        # 빌드된 exe에서는 기본(FFmpeg) 백엔드의 DLL이 제대로 안 잡혀서
+        # 동영상 "파일"을 못 여는 경우가 있음. 카메라가 쓰는 MSMF를 먼저
+        # 시도하고, 안 되면 기본 방식으로 재시도 (open_camera_safe와 동일 패턴).
+        cap = None
+        if hasattr(cv2, "CAP_MSMF"):
+            cap = cv2.VideoCapture(
+                self.video_path, cv2.CAP_MSMF
+            )
+        if cap is None or not cap.isOpened():
+            if cap is not None:
+                cap.release()
+            cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
             self.status.emit("동영상을 열 수 없습니다.")
             self.done.emit(None)

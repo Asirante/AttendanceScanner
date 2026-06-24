@@ -13,7 +13,9 @@ This is the same as the GPU spec except:
   - CUDA libraries are explicitly excluded (in case any linger on the system)
 The app code itself is unchanged; face_engine auto-selects CPU when no GPU.
 """
+import glob
 import os
+import sysconfig
 
 from PyInstaller.utils.hooks import (
     collect_data_files, collect_submodules, collect_dynamic_libs,
@@ -43,6 +45,30 @@ datas += collect_data_files("cv2")
 binaries = collect_dynamic_libs("cv2")
 binaries += collect_dynamic_libs("torch")
 binaries += collect_dynamic_libs("torchvision")
+
+# --- OpenCV FFmpeg 플러그인 DLL 추가 배치 (동영상 "파일" 업로드 기능용) ---
+# collect_dynamic_libs("cv2")만으로는 빌드된 exe에서 cv2.VideoCapture(파일경로)가
+# 실패하는 경우가 있다 (webcam은 MSMF/DSHOW를 쓰므로 영향 없음 — 코드 쪽엔 이미
+# MSMF 우선 시도 폴백을 넣어뒀지만, 일부 코덱/포맷은 FFmpeg DLL이 꼭 필요함).
+# OpenCV가 이 DLL을 찾는 위치가 환경에 따라 달라서, exe와 같은 폴더(".")와
+# cv2 패키지 폴더("cv2") 두 곳에 모두 복사해 넣어 이중으로 방지한다.
+def _find_cv2_ffmpeg_dlls():
+    site_packages = sysconfig.get_paths()["purelib"]
+    return glob.glob(
+        os.path.join(site_packages, "cv2", "opencv_videoio_ffmpeg*.dll")
+    )
+
+_ffmpeg_dlls = _find_cv2_ffmpeg_dlls()
+if _ffmpeg_dlls:
+    for _dll in _ffmpeg_dlls:
+        binaries.append((_dll, "."))
+        binaries.append((_dll, "cv2"))
+        print(f"[spec-cpu] ffmpeg plugin included (2 locations): {os.path.basename(_dll)}")
+else:
+    print(
+        "[spec-cpu] warning: opencv ffmpeg plugin DLL not found — "
+        "video FILE upload may still fail in some formats (webcam recording is unaffected)."
+    )
 
 # --- App icon (window / taskbar) ---
 ICON_FILE = "favicon.ico"
