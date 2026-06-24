@@ -128,6 +128,48 @@ class CameraScanThread(QtCore.QThread):
         self.done.emit(found)
 
 
+class ModelCheckThread(QtCore.QThread):
+    """설정 화면의 '모델 확인/다운로드' 버튼용 — 백그라운드에서 모델 로드를 시도."""
+
+    progress = QtCore.pyqtSignal(str)
+    done = QtCore.pyqtSignal(
+        bool, str
+    )  # (성공 여부, 메시지)
+
+    def __init__(self, engine: FaceEngine):
+        super().__init__()
+        self.engine = engine
+
+    def run(self):
+        try:
+            ok = self.engine.load(
+                progress_cb=self.progress.emit
+            )
+        except Exception as e:
+            ok = False
+            self.engine._load_error = str(e)
+        if ok:
+            dev = (
+                "GPU"
+                if self.engine.device
+                and self.engine.device.type == "cuda"
+                else "CPU"
+            )
+            self.done.emit(
+                True,
+                f"모델이 정상적으로 준비되었습니다. ({dev})",
+            )
+        else:
+            err = (
+                self.engine.get_load_error()
+                or "알 수 없는 오류"
+            )
+            self.done.emit(
+                False,
+                f"모델을 불러오지 못했습니다.\n\n{err}",
+            )
+
+
 class LoadingDialog(QtWidgets.QDialog):
     """검색 등 짧은 작업 동안 띄우는 모달 로딩창 (진행 표시줄 포함)."""
 
@@ -1561,6 +1603,22 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return lb
 
+        # AI 얼굴 인식 모델 상태 확인 / 수동 다운로드
+        col.addWidget(section_label("AI 얼굴 인식 모델"))
+        model_row = QtWidgets.QHBoxLayout()
+        self.model_status_label = QtWidgets.QLabel(
+            self._model_status_text()
+        )
+        self.model_status_label.setWordWrap(True)
+        model_row.addWidget(self.model_status_label, 1)
+        model_check_btn = QtWidgets.QPushButton(
+            "모델 확인 / 다운로드"
+        )
+        model_check_btn.setFixedWidth(150)
+        model_check_btn.clicked.connect(self._check_model)
+        model_row.addWidget(model_check_btn)
+        col.addLayout(model_row)
+
         # DB 경로 (라벨 위 / 입력칸 아래)
         col.addWidget(section_label("DB 경로"))
         path_row = QtWidgets.QHBoxLayout()
@@ -1777,6 +1835,64 @@ class MainWindow(QtWidgets.QMainWindow):
         outer_h.addWidget(ww)
         outer_h.addStretch(1)
         return outer
+
+    def _model_status_text(self) -> str:
+        if self.engine.is_loaded():
+            dev = (
+                "GPU"
+                if self.engine.device
+                and self.engine.device.type == "cuda"
+                else "CPU"
+            )
+            return f"✅ 모델 준비됨 ({dev})"
+        err = self.engine.get_load_error()
+        if err:
+            return f"⚠ 모델 로드 실패: {err}"
+        return "❔ 아직 확인되지 않음 — 버튼을 눌러 확인하세요."
+
+    def _check_model(self):
+        """수동으로 AI 모델 로드를 시도(다운로드 포함). 스레드로 돌려 UI가 멈추지 않게 함."""
+        if (
+            getattr(self, "model_check_thread", None)
+            and self.model_check_thread.isRunning()
+        ):
+            return
+        self._model_dialog = LoadingDialog(
+            "AI 모델 확인 중...\n(최초 1회는 가중치 다운로드로 시간이 걸립니다)",
+            self,
+        )
+        self.model_check_thread = ModelCheckThread(
+            self.engine
+        )
+        self.model_check_thread.progress.connect(
+            self._on_model_progress
+        )
+        self.model_check_thread.done.connect(
+            self._on_model_checked
+        )
+        self.model_check_thread.start()
+        self._model_dialog.exec_()  # 완료되면 _on_model_checked에서 닫음
+
+    def _on_model_progress(self, msg: str):
+        if getattr(self, "_model_dialog", None):
+            self._model_dialog.label.setText(msg)
+        self.statusBar().showMessage(msg)
+
+    def _on_model_checked(self, ok: bool, msg: str):
+        if getattr(self, "_model_dialog", None):
+            self._model_dialog.accept()
+            self._model_dialog = None
+        self.model_status_label.setText(
+            self._model_status_text()
+        )
+        if ok:
+            QtWidgets.QMessageBox.information(
+                self, "모델 확인", msg
+            )
+        else:
+            QtWidgets.QMessageBox.warning(
+                self, "모델 확인", msg
+            )
 
     def _scan_cameras(self):
         """수동 카메라 검색: 로딩창을 띄우고 스레드에서 검색 (UI 멈춤/튕김 방지)."""
